@@ -6,12 +6,13 @@ extends Control
 # Godot 4.7.x / GDScript
 #
 # Flow:
-#   Title -> 6人から3人選択 -> 5連戦 -> Clear
+#   Title -> 13人から3人選択 -> 5連戦 -> Clear
 #
 # Battle:
 #   流動CTBで行動者が回る
 #   -> 技ごとの待ち時間で次行動位置が変化
-#   -> 8拍で奏譜完成 / 月奏 / BREAK / 敵大技
+#   -> 8拍で奏譜完成 / 多重奏式 / 月奏 / BREAK / 敵大技
+# v0.11.0: 13人編成 / キャラ詳細画面 / 月相リスク / 常闇天狗火力調整 / 新規3職
 #
 # Assets expected:
 #   res://assets/aicon/samurai_idle.png
@@ -26,6 +27,9 @@ extends Control
 #   res://assets/aicon/chochin_hurt.png
 #   res://assets/aicon/jusoshi_idle.png
 #   res://assets/aicon/jusoshi_hurt.png
+#   res://assets/aicon/yukionna_idle.png / yukionna_hurt.png
+#   res://assets/aicon/hakamori_idle.png / hakamori_hurt.png
+#   res://assets/aicon/onmyoji_idle.png / onmyoji_hurt.png
 #
 # Bosses:
 #   res://assets/boss/boss1.png ... boss5.png
@@ -89,6 +93,9 @@ const AUDIO_TIME := "res://assets/audio/time.wav"
 const AUDIO_DAMAGE := "res://assets/audio/damage.wav"
 const AUDIO_BREAK := "res://assets/audio/break.wav"
 const AUDIO_COMMAND := "res://assets/audio/command.wav"
+const AUDIO_DOKADODO := "res://assets/audio/dokadodo.mp3"
+const AUDIO_KAKADODO := "res://assets/audio/kakadodo.mp3"
+const AUDIO_RITUAL_IMPACT := "res://assets/audio/impact.mp3"
 const CUSTOM_FONT := "res://assets/fonts/YujiSyuku-Regular.ttf"
 
 const SCORE_LENGTH := 8
@@ -188,6 +195,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 4,
 				"target": "enemy",
 				"desc": "斬撃1.45倍 / 敵崩壊中なら自身の構え+18"
+			},
+			{
+				"id": "samurai_moon_chaser",
+				"name": "月影追い",
+				"cost": 4,
+				"target": "enemy",
+				"desc": "斬撃1.35倍 / 敵崩壊中は2.60倍。崩壊への追撃専用"
 			}
 		]
 	},
@@ -239,6 +253,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 4,
 				"target": "none",
 				"desc": "大技準備中なら敵の行動位置を後ろへ送る"
+			},
+			{
+				"id": "sennin_moon_borrow",
+				"name": "月借り",
+				"cost": 4,
+				"target": "none",
+				"desc": "現在月と必ず共鳴する音紋を刻む / 自身の奏力+2 / 味方構え+8"
 			}
 		]
 	},
@@ -290,6 +311,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 4,
 				"target": "enemy",
 				"desc": "打撃0.85倍 / 大技準備中は崩し性能が急上昇"
+			},
+			{
+				"id": "kasa_ukemi_shigure",
+				"name": "受流・時雨",
+				"cost": 4,
+				"target": "self",
+				"desc": "強防御 / 構え+28 / 被弾時に80%反撃"
 			}
 		]
 	},
@@ -341,6 +369,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 6,
 				"target": "party",
 				"desc": "味方全体を回復 / 祝詞2巡 / 結界1巡 / 次巡の月を1つ余分に進める"
+			},
+			{
+				"id": "miko_bell_barrier",
+				"name": "御鈴結界",
+				"cost": 5,
+				"target": "party",
+				"desc": "味方全体に結界2巡 / 弱体を1種祓う / 奏力+1"
 			}
 		]
 	},
@@ -392,6 +427,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 5,
 				"target": "enemy",
 				"desc": "妖術1.65倍 / 火傷を消費すると威力2.20倍・崩し強化"
+			},
+			{
+				"id": "chochin_wick_feast",
+				"name": "灯芯喰い",
+				"cost": 4,
+				"target": "enemy",
+				"desc": "妖術0.95倍 / 火傷1巡を喰らい2.35倍へ。瞬間火力へ変換"
 			}
 		]
 	},
@@ -443,6 +485,13 @@ const CHARACTERS: Dictionary = {
 				"cost": 5,
 				"target": "enemy",
 				"desc": "呪術1.25倍 / 弱体数が多いほど崩し性能上昇"
+			},
+			{
+				"id": "jusoshi_curse_return",
+				"name": "呪還し",
+				"cost": 5,
+				"target": "enemy",
+				"desc": "呪術1.15倍 / 弱体1種ごとに威力+25%・崩し+20%"
 			}
 		]
 	},
@@ -464,7 +513,8 @@ const CHARACTERS: Dictionary = {
 			{"id":"kunoichi_poison_star", "name":"毒手裏剣", "cost":3, "target":"enemy", "desc":"斬撃0.90倍 / 毒3巡"},
 			{"id":"kunoichi_mist_step", "name":"霞走り", "cost":2, "target":"enemy", "desc":"斬撃0.75倍 / 待ち極小 / 自身の構え+12"},
 			{"id":"kunoichi_ninja_return", "name":"忍返し", "cost":4, "target":"self", "desc":"防御・反撃 / 次の行動を早める"},
-			{"id":"kunoichi_scatter_star", "name":"乱れ星", "cost":5, "target":"enemy", "desc":"斬撃1.80倍 / 崩し1.55倍 / 次巡の月を1つ余分に進める"}
+			{"id":"kunoichi_scatter_star", "name":"乱れ星", "cost":5, "target":"enemy", "desc":"斬撃1.80倍 / 崩し1.55倍 / 次巡の月を1つ余分に進める"},
+			{"id":"kunoichi_shadow_cross", "name":"影渡り", "cost":2, "target":"self", "desc":"攻撃せず行動待ちを極端に短縮 / 構え+16"}
 		]
 	},
 	"酒呑童子": {
@@ -485,7 +535,8 @@ const CHARACTERS: Dictionary = {
 			{"id":"shuten_sake_flame", "name":"酒炎", "cost":3, "target":"enemy", "desc":"妖火1.25倍 / 火傷3巡 / 自身の構え+8"},
 			{"id":"shuten_drink_dry", "name":"呑み干し", "cost":3, "target":"self", "desc":"生命18%・奏力2・構え30回復"},
 			{"id":"shuten_drunk_barrage", "name":"酔狂乱打", "cost":5, "target":"enemy", "desc":"打撃2.15倍 / 昂揚中はさらに1.25倍"},
-			{"id":"shuten_hyakki_feast", "name":"百鬼宴", "cost":5, "target":"party", "desc":"味方全体の構え+14 / 自身に昂揚3巡 / 次巡の月を1つ余分に進める"}
+			{"id":"shuten_hyakki_feast", "name":"百鬼宴", "cost":5, "target":"party", "desc":"味方全体の構え+14 / 自身に昂揚3巡 / 次巡の月を1つ余分に進める"},
+			{"id":"shuten_oni_drink", "name":"鬼呑み", "cost":4, "target":"self", "desc":"最大生命12%を代償に構え全快 / 昂揚2巡 / 奏力+2"}
 		]
 	},
 	"神楽師": {
@@ -506,7 +557,8 @@ const CHARACTERS: Dictionary = {
 			{"id":"kagurashi_double_beat", "name":"重ね拍子", "cost":4, "target":"none", "desc":"同じ音紋を奏譜へ二拍刻む"},
 			{"id":"kagurashi_repose", "name":"鎮魂舞", "cost":4, "target":"party", "desc":"味方全体を小回復 / 毒・火傷を祓う / 構え+10"},
 			{"id":"kagurashi_moon_call", "name":"月招き", "cost":4, "target":"none", "desc":"次巡の月相を2つ進める / 味方全体の奏力+1"},
-			{"id":"kagurashi_wild_kagura", "name":"荒神楽", "cost":6, "target":"enemy", "desc":"術式1.65倍 / 奏譜6拍以上なら2.25倍・崩し強化"}
+			{"id":"kagurashi_wild_kagura", "name":"荒神楽", "cost":6, "target":"enemy", "desc":"術式1.65倍 / 奏譜6拍以上なら2.25倍・崩し強化"},
+			{"id":"kagurashi_beat_return", "name":"拍返し", "cost":4, "target":"none", "desc":"直前の音紋を一つ前と同じ音へ整え、自身の音も重ねる"}
 		]
 	},
 	"猫又": {
@@ -527,7 +579,74 @@ const CHARACTERS: Dictionary = {
 			{"id":"nekomata_twin_tail", "name":"双尾裂き", "cost":3, "target":"enemy", "desc":"斬撃1.15倍 / 崩し1.20倍"},
 			{"id":"nekomata_feint", "name":"猫騙し", "cost":4, "target":"enemy", "desc":"妖術0.70倍 / 敵の行動を遅らせ、攻撃低下2巡"},
 			{"id":"nekomata_soul_lick", "name":"魂舐め", "cost":4, "target":"enemy", "desc":"妖術1.05倍 / 与えた傷の半分を回復 / 弱体中なら奏力+1"},
-			{"id":"nekomata_bakeneko_dance", "name":"化生乱舞", "cost":6, "target":"enemy", "desc":"妖術2.00倍 / 弱体2種以上なら2.50倍 / 次巡の月を1つ余分に進める"}
+			{"id":"nekomata_bakeneko_dance", "name":"化生乱舞", "cost":6, "target":"enemy", "desc":"妖術2.00倍 / 弱体2種以上なら2.50倍 / 次巡の月を1つ余分に進める"},
+			{"id":"nekomata_soul_copy", "name":"魂写し", "cost":4, "target":"enemy", "desc":"妖術0.95倍 / 敵の弱体を1巡延長 / 弱体2種以上なら奏力+2"}
+		]
+	},
+	"雪女": {
+		"slug": "yukionna",
+		"role": "氷雪 / 行動阻害",
+		"instrument": "風鈴",
+		"hp": 110,
+		"mana": 15,
+		"atk": 18,
+		"mag": 40,
+		"def": 18,
+		"res": 34,
+		"spd": 30,
+		"break": 12,
+		"regen": 2,
+		"skills": [
+			{"id":"yukionna_ice_needle", "name":"氷針", "cost":3, "target":"enemy", "desc":"氷術1.25倍 / 敵の行動を少し遅らせる"},
+			{"id":"yukionna_white_breath", "name":"白息", "cost":4, "target":"enemy", "desc":"氷術0.80倍 / 攻撃低下3巡"},
+			{"id":"yukionna_snow_veil", "name":"雪化粧", "cost":4, "target":"party", "desc":"味方全体に結界1巡 / 構え+12"},
+			{"id":"yukionna_frozen_feet", "name":"凍足", "cost":4, "target":"enemy", "desc":"氷術0.70倍 / 敵CTBを大きく遅らせる / 崩し1.25倍"},
+			{"id":"yukionna_setsugekka", "name":"雪月花", "cost":6, "target":"enemy", "desc":"氷術1.85倍 / 弱体中なら2.45倍"},
+			{"id":"yukionna_ice_mirror", "name":"氷鏡", "cost":4, "target":"self", "desc":"防御態勢 / 結界2巡 / 構え+22"}
+		]
+	},
+	"墓守": {
+		"slug": "hakamori",
+		"role": "守護 / 崩し",
+		"instrument": "木魚",
+		"hp": 172,
+		"mana": 10,
+		"atk": 34,
+		"mag": 17,
+		"def": 39,
+		"res": 30,
+		"spd": 17,
+		"break": 25,
+		"regen": 1,
+		"skills": [
+			{"id":"hakamori_grave_strike", "name":"墓打ち", "cost":3, "target":"enemy", "desc":"打撃1.30倍 / 崩し2.20倍"},
+			{"id":"hakamori_gravemark", "name":"墓標立て", "cost":3, "target":"enemy", "desc":"打撃0.75倍 / 墓標3巡 / 防御低下"},
+			{"id":"hakamori_burial", "name":"土葬", "cost":5, "target":"enemy", "desc":"打撃1.55倍 / 墓標中なら2.45倍"},
+			{"id":"hakamori_guardian", "name":"墓守り", "cost":4, "target":"party", "desc":"味方全体に結界1巡 / 自身は防御態勢"},
+			{"id":"hakamori_requiem", "name":"鎮魂", "cost":4, "target":"party", "desc":"毒・火傷を祓い / 味方全体の構え+16"},
+			{"id":"hakamori_return", "name":"冥土返し", "cost":5, "target":"ally", "desc":"生命が少ない味方ほど大きく回復 / 構え+18"}
+		]
+	},
+	"陰陽師": {
+		"slug": "onmyoji",
+		"role": "陰陽 / 月相操作",
+		"instrument": "神楽笛",
+		"hp": 114,
+		"mana": 16,
+		"atk": 20,
+		"mag": 39,
+		"def": 21,
+		"res": 36,
+		"spd": 28,
+		"break": 11,
+		"regen": 2,
+		"skills": [
+			{"id":"onmyoji_white_shikigami", "name":"式神・白", "cost":3, "target":"enemy", "desc":"術式1.05倍 / 最も傷ついた味方を小回復"},
+			{"id":"onmyoji_black_shikigami", "name":"式神・黒", "cost":3, "target":"enemy", "desc":"術式1.15倍 / 防御低下2巡"},
+			{"id":"onmyoji_yin_turn", "name":"陰転", "cost":5, "target":"none", "desc":"次巡の月を現在月の1つ前へ指定"},
+			{"id":"onmyoji_yang_turn", "name":"陽転", "cost":4, "target":"none", "desc":"次巡の月を現在月の2つ先へ指定"},
+			{"id":"onmyoji_barrier", "name":"結界符", "cost":4, "target":"party", "desc":"味方全体に結界2巡 / 構え+8"},
+			{"id":"onmyoji_score_talisman", "name":"奏替符", "cost":4, "target":"none", "desc":"直前の音紋を現在月の共鳴音へ書き換え、自身も一拍刻む"}
 		]
 	}
 
@@ -589,8 +708,8 @@ const ENEMIES: Array[Dictionary] = [
 		"glyph": "天",
 		"hp": 960,
 		"mana": 0,
-		"atk": 39,
-		"mag": 37,
+		"atk": 35,
+		"mag": 34,
 		"def": 31,
 		"res": 30,
 		"spd": 39,
@@ -625,6 +744,9 @@ var damage_player: AudioStreamPlayer
 var break_player: AudioStreamPlayer
 var impact_player: AudioStreamPlayer
 var command_player: AudioStreamPlayer
+var dokadodo_stream: AudioStream
+var kakadodo_stream: AudioStream
+var ritual_impact_stream: AudioStream
 
 var screen_layer: Control
 var effect_layer: Control
@@ -639,6 +761,7 @@ var round_number: int = 1
 var total_rounds: int = 0
 var moon_index: int = 1
 var round_moon_bonus: int = 0
+var round_moon_override: int = -1
 var beat: int = 0
 var measure: int = 1
 var measure_notes: Array[Dictionary] = []
@@ -657,6 +780,15 @@ var combo_damage_rounds: int = 0
 var combo_break_rounds: int = 0
 var last_combo_name: String = "未完成"
 var active_score_note: String = ""
+var active_actor_name: String = ""
+
+# v0.10 戦績 / 奏譜評価
+var battle_max_break_damage: int = 0
+var battle_damage_taken: int = 0
+var battle_score_count: int = 0
+var battle_best_score_value: int = 0
+var battle_best_score_name: String = ""
+var battle_last_completed_score: String = ""
 
 var motes: Array[Vector2] = []
 var slash_alpha: float = 0.0
@@ -668,6 +800,7 @@ var shake_amount: float = 0.0
 var selection_counter_label: Label
 var selection_start_button: Button
 var selection_cards: Dictionary = {}
+var character_detail_overlay: Control
 
 # Battle refs
 var battle_root: Control
@@ -872,6 +1005,9 @@ func build_audio() -> void:
 	break_player.stream = load_audio(AUDIO_BREAK)
 	impact_player.stream = load_audio(AUDIO_ATTACK)
 	command_player.stream = load_audio(AUDIO_COMMAND)
+	dokadodo_stream = load_audio(AUDIO_DOKADODO)
+	kakadodo_stream = load_audio(AUDIO_KAKADODO)
+	ritual_impact_stream = load_audio(AUDIO_RITUAL_IMPACT)
 
 	set_stream_loop(title_player.stream)
 	set_stream_loop(battle_player.stream)
@@ -944,6 +1080,57 @@ func play_one_shot(player: AudioStreamPlayer, pitch: float = 1.0) -> void:
 	player.play()
 
 
+func play_trimmed_stream(
+	stream: AudioStream,
+	volume_db_value: float = -4.0,
+	pitch: float = 1.0,
+	duration: float = 0.80,
+	from_position: float = 0.0
+) -> void:
+	if stream == null:
+		return
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	player.bus = "演出"
+	player.volume_db = volume_db_value
+	player.pitch_scale = pitch
+	add_child(player)
+	player.play(maxf(0.0, from_position))
+	var timer := get_tree().create_timer(maxf(0.08, duration))
+	timer.timeout.connect(player.queue_free)
+
+
+func play_score_complete_drum(score_value: int) -> void:
+	# dokadodo は低域の太鼓を主役に。高い奏価では少しだけ低く重くする。
+	var pitch := 1.0
+	if score_value >= 10:
+		pitch = 0.88
+	elif score_value >= 7:
+		pitch = 0.94
+	play_trimmed_stream(dokadodo_stream, -3.0, pitch, 2.35, 0.0)
+
+
+func play_score_role_drum(role_index: int, role_value: int) -> void:
+	# kakadodo の頭と中盤を交互に切り出し、役が積み上がるたび違う打点にする。
+	var start_pos := 0.0 if role_index % 2 == 0 else 0.92
+	var pitch := 1.0 + minf(0.10, float(role_index) * 0.018)
+	if role_value >= 5:
+		pitch *= 0.94
+	play_trimmed_stream(kakadodo_stream, -4.0, pitch, 0.72, start_pos)
+
+
+func play_unlock_impact() -> void:
+	# impact は後半に芯があるので、立ち上がりを少し飛ばして解放の一撃へ。
+	play_trimmed_stream(ritual_impact_stream, -2.0, 1.0, 1.18, 1.12)
+
+
+func play_boss_charge_drum(stage: int) -> void:
+	if stage <= 1:
+		play_trimmed_stream(kakadodo_stream, -5.0, 0.86, 1.55, 0.0)
+	else:
+		play_trimmed_stream(ritual_impact_stream, -3.0, 0.90, 1.20, 1.08)
+
+
 
 func play_generated_sweep(
 	start_hz: float,
@@ -983,12 +1170,43 @@ func play_generated_sweep(
 	get_tree().create_timer(duration + 0.12).timeout.connect(player.queue_free)
 
 
-func play_generated_score_sound(is_moon_combo: bool) -> void:
+func play_generated_score_sound(is_moon_combo: bool, score_value: int = 0) -> void:
+	# 奏譜成立音は「低い打点 → 上昇音 → 高音の余韻」を重ねる。
+	# 奏価が高いほど和音の層を増やし、難役の成立を耳でも区別できる。
+	play_generated_sweep(92.0, 54.0, 0.24, 0.16 if score_value >= 7 else 0.10)
+
 	if is_moon_combo:
 		play_generated_sweep(132.0, 660.0, 0.58, 0.18)
 		play_generated_sweep(198.0, 990.0, 0.58, 0.08)
 	else:
 		play_generated_sweep(180.0, 460.0, 0.42, 0.14)
+
+	if score_value >= 3:
+		play_generated_sweep(220.0, 660.0, 0.48, 0.075)
+	if score_value >= 7:
+		play_generated_sweep(165.0, 880.0, 0.66, 0.095)
+		play_generated_sweep(330.0, 1320.0, 0.46, 0.045)
+	if score_value >= 10:
+		play_generated_sweep(70.0, 42.0, 0.38, 0.20)
+		play_generated_sweep(440.0, 1760.0, 0.72, 0.055)
+
+
+func trigger_score_hit_stop(score_value: int, is_moon_combo: bool) -> void:
+	var duration := 0.075
+	if score_value >= 10:
+		duration = 0.19
+	elif score_value >= 7:
+		duration = 0.145
+	elif score_value >= 3:
+		duration = 0.105
+	elif is_moon_combo:
+		duration = 0.095
+
+	hit_stop_serial += 1
+	var token := hit_stop_serial
+	Engine.time_scale = 0.055 if score_value >= 7 else 0.10
+	var timer := get_tree().create_timer(duration, true, false, true)
+	timer.timeout.connect(end_hit_stop.bind(token))
 
 
 func play_generated_break_sound() -> void:
@@ -1143,7 +1361,7 @@ func show_party_select_screen() -> void:
 	head_box.add_child(heading)
 
 	var explain := make_label(
-		"10人から3人を選択。戦闘では行動順の早い者から作戦を決めます。",
+		"13人から3人を選択。詳細で役割・固有・特技・必殺条件を確認できます。",
 		13,
 		COL_MUTED
 	)
@@ -1274,6 +1492,14 @@ func build_selection_card(char_name: String) -> Dictionary:
 	)
 	info.add_child(stats)
 
+	var passive_label := make_label(
+		"固有　" + get_character_passive_name(char_name) + "　—　" + get_character_passive_desc(char_name),
+		9,
+		Color("#c8ae78")
+	)
+	passive_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	outer.add_child(passive_label)
+
 	var skill_names: Array[String] = []
 	for skill_variant in data["skills"]:
 		var skill_data: Dictionary = skill_variant
@@ -1287,16 +1513,249 @@ func build_selection_card(char_name: String) -> Dictionary:
 	skills_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	outer.add_child(skills_label)
 
+	var button_row := HBoxContainer.new()
+	button_row.add_theme_constant_override("separation", 8)
+	outer.add_child(button_row)
+
+	var detail_button := make_secondary_button("詳細", 92)
+	detail_button.pressed.connect(show_character_detail.bind(char_name))
+	button_row.add_child(detail_button)
+
 	var select_button := make_secondary_button("選択", 0)
 	select_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select_button.pressed.connect(toggle_character_selection.bind(char_name))
-	outer.add_child(select_button)
+	button_row.add_child(select_button)
 
 	return {
 		"panel": panel,
 		"button": select_button,
+		"detail_button": detail_button,
 		"portrait": portrait
 	}
+
+
+
+func get_character_passive_name(char_name: String) -> String:
+	match char_name:
+		"侍": return "残心"
+		"仙人": return "天道読み"
+		"傘使い": return "雨受け"
+		"巫女": return "清奏"
+		"提灯使い": return "燃え移り"
+		"呪詛師": return "怨積み"
+		"くノ一": return "残影"
+		"酒呑童子": return "酔勢"
+		"神楽師": return "拍導"
+		"猫又": return "双尾"
+		"雪女": return "凍月"
+		"墓守": return "墓標"
+		"陰陽師": return "陰陽巡り"
+		_: return "無"
+
+
+func get_character_passive_desc(char_name: String) -> String:
+	match char_name:
+		"侍": return "崩壊中への攻撃+20%。自分で崩壊させると次行動が速い"
+		"仙人": return "現在月と共鳴する特技の奏力消費-1"
+		"傘使い": return "防御中の被害をさらに軽減。被弾時に奏力+1・構え回復"
+		"巫女": return "弱体を祓うたび奏力が戻る"
+		"提灯使い": return "火傷中の敵への与ダメージ+15%"
+		"呪詛師": return "敵の弱体1種ごとに術式+6%（最大24%）"
+		"くノ一": return "特技の行動待ち-12%"
+		"酒呑童子": return "生命50%以下で攻撃+25%・崩し+20%"
+		"神楽師": return "奏譜6拍以上で特技の奏力消費-1"
+		"猫又": return "敵の弱体が2種以上なら攻撃・術式+18%"
+		"雪女": return "弱体中の敵へ攻撃すると、その行動位置をわずかに遅らせる"
+		"墓守": return "被弾するほど墓標を蓄積。3つ以上で崩し+20%、防御+10%"
+		"陰陽師": return "月相操作の特技は奏力消費-1。月を危険ごと扱う調律役"
+		_: return ""
+
+
+func get_character_summary(char_name: String) -> String:
+	match char_name:
+		"侍": return "敵を崩壊させ、その隙へ大火力を差し込む前衛。上弦との相性が良い。"
+		"仙人": return "月相と奏力を整える支援役。欲しい月を早め、味方の行動も軽くする。"
+		"傘使い": return "防御と崩しを両立する守り手。敵の大技を受け止めながら崩壊を狙う。"
+		"巫女": return "回復・浄化・結界の専門家。長期戦で編成全体を安定させる。"
+		"提灯使い": return "火傷を育てて瞬間火力へ変える妖火使い。十六夜と満月で攻める。"
+		"呪詛師": return "弱体を積むほど火力と崩しが伸びる術師。状態異常編成の核。"
+		"くノ一": return "CTBを操作して先手を取り続ける高速役。敵の大技準備にも割り込みやすい。"
+		"酒呑童子": return "高い生命と崩しを持つ豪腕。傷つくほど攻撃的になり、短期決戦に強い。"
+		"神楽師": return "奏譜そのものを整える特殊支援。高位の役を意図的に狙うための要。"
+		"猫又": return "弱体中の敵へ追撃する妖術役。火傷・遅延・吸収を器用に扱う。"
+		"雪女": return "敵の刻を凍らせて月待ちの時間を作る術師。弱体中の敵ほど止めやすい。"
+		"墓守": return "攻撃を受けながら墓標を積み、崩しへ変える重耐久役。立て直しも得意。"
+		"陰陽師": return "危険な月も含めて次巡を指定する月相操作役。奏譜の最後の一音も整えられる。"
+		_: return ""
+
+
+func get_character_play_tip(char_name: String) -> String:
+	match char_name:
+		"侍": return "敵を崩壊させる直前に行動を残し、崩壊後の月影追い・必殺へ繋ぐ。"
+		"仙人": return "月転を連打するより、次に狙う奏譜と敵大技の巡を見て月を動かす。"
+		"傘使い": return "敵大技の予兆中に雷傘。守りながらBREAKへ持っていく。"
+		"巫女": return "回復だけでなく、状態異常が来る直前に結界を置くと行動を節約できる。"
+		"提灯使い": return "火傷を維持するか灯芯喰いで消費するかを敵HPで決める。"
+		"呪詛師": return "先に弱体を2～3種積み、呪還し・奈落印の倍率を引き上げる。"
+		"くノ一": return "敵CTBを見て影縫いと影渡りを使い分け、危険な行動を後ろへ送る。"
+		"酒呑童子": return "生命50%以下を怖がりすぎず、鬼呑みから一気に崩しを取る。"
+		"神楽師": return "6拍以降から完成候補を見て、重ね拍子・拍返しで狙う役へ寄せる。"
+		"猫又": return "仲間が付けた弱体を利用すると本領を発揮。単独より連携向き。"
+		"雪女": return "満月待ちなど危険な待機をしたい時に敵CTBを凍らせ、時間を買う。"
+		"墓守": return "序盤に墓標を貯めてから崩し役へ。低生命の味方は冥土返しで救う。"
+		"陰陽師": return "次巡の危険と欲しい奏譜を同時に見て陰転・陽転を選ぶ。"
+		_: return ""
+
+
+func show_character_detail(char_name: String) -> void:
+	if character_detail_overlay != null and is_instance_valid(character_detail_overlay):
+		character_detail_overlay.queue_free()
+
+	play_command_sound(1.0)
+	var data: Dictionary = CHARACTERS[char_name]
+
+	character_detail_overlay = Control.new()
+	character_detail_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	character_detail_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	screen_layer.add_child(character_detail_overlay)
+
+	var shade := ColorRect.new()
+	shade.color = Color(0.004, 0.006, 0.010, 0.91)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	character_detail_overlay.add_child(shade)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	character_detail_overlay.add_child(center)
+
+	var frame := make_panel(Color("#0b0d13fc"), Color("#6b5838"), 18, 2)
+	frame.custom_minimum_size = Vector2(1040, 690)
+	center.add_child(frame)
+
+	var margin := MarginContainer.new()
+	set_margins(margin, 26, 22, 26, 22)
+	frame.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 13)
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 18)
+	root.add_child(header)
+
+	var portrait_frame := make_panel(Color("#151820"), Color("#4a4031"), 14, 1)
+	portrait_frame.custom_minimum_size = Vector2(190, 230)
+	header.add_child(portrait_frame)
+
+	var portrait := TextureRect.new()
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.texture = get_portrait_texture(char_name, false)
+	portrait_frame.add_child(portrait)
+	if portrait.texture == null:
+		var fallback := make_label(char_name.left(1), 72, Color("#786c57"))
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		portrait_frame.add_child(fallback)
+
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 7)
+	header.add_child(info)
+
+	var title := make_label(char_name, 36, COL_GOLD_BRIGHT)
+	apply_display_font(title)
+	info.add_child(title)
+	info.add_child(make_label(str(data["role"]) + "　・　" + str(data["instrument"]), 13, Color("#a6a197")))
+
+	var summary := make_label(get_character_summary(char_name), 13, Color("#d2d0cb"))
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.add_child(summary)
+
+	var stat_text := "生命 %d　奏力 %d　攻撃 %d　術式 %d\n防御 %d　耐術 %d　速さ %d　崩し %d" % [
+		int(data["hp"]), int(data["mana"]), int(data["atk"]), int(data["mag"]),
+		int(data["def"]), int(data["res"]), int(data["spd"]), int(data["break"])
+	]
+	info.add_child(make_label(stat_text, 12, Color("#9ca1aa")))
+
+	var passive := make_label("固有　%s\n%s" % [get_character_passive_name(char_name), get_character_passive_desc(char_name)], 12, Color("#d4b36f"))
+	passive.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.add_child(passive)
+
+	var ult := make_label("必殺　%s　／　解放：%s" % [get_ultimate_name(char_name), get_ultimate_requirement(char_name)], 12, Color("#e1c47d"))
+	info.add_child(ult)
+
+	var divider := HSeparator.new()
+	root.add_child(divider)
+
+	var skill_title := make_label("特　技", 22, COL_GOLD)
+	apply_display_font(skill_title)
+	root.add_child(skill_title)
+
+	var skill_grid := GridContainer.new()
+	skill_grid.columns = 2
+	skill_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	skill_grid.add_theme_constant_override("h_separation", 10)
+	skill_grid.add_theme_constant_override("v_separation", 8)
+	root.add_child(skill_grid)
+
+	for skill_variant in data["skills"]:
+		var skill_data: Dictionary = skill_variant
+		var skill_panel := make_panel(Color("#10131a"), Color("#30343d"), 10, 1)
+		skill_panel.custom_minimum_size = Vector2(470, 76)
+		skill_grid.add_child(skill_panel)
+		var sm := MarginContainer.new()
+		set_margins(sm, 12, 9, 12, 9)
+		skill_panel.add_child(sm)
+		var sv := VBoxContainer.new()
+		sm.add_child(sv)
+		var note := get_note_display(get_skill_note_type(str(skill_data["id"])))
+		sv.add_child(make_label("%s　%s　　奏力 %d" % [note, str(skill_data["name"]), int(skill_data["cost"])], 13, get_skill_color(str(skill_data["id"]))))
+		var desc := make_label(str(skill_data["desc"]), 10, Color("#9da1a9"))
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		sv.add_child(desc)
+
+	var tip := make_label("立ち回り　" + get_character_play_tip(char_name), 11, Color("#9db4c0"))
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(tip)
+
+	var buttons := HBoxContainer.new()
+	root.add_child(buttons)
+	var choose := make_primary_button("このキャラを選択", 230)
+	choose.pressed.connect(select_character_from_detail.bind(char_name))
+	buttons.add_child(choose)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(spacer)
+	var close := make_secondary_button("閉じる", 120)
+	close.pressed.connect(close_character_detail)
+	buttons.add_child(close)
+
+	character_detail_overlay.modulate.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(character_detail_overlay, "modulate:a", 1.0, 0.10)
+
+
+func close_character_detail() -> void:
+	if character_detail_overlay == null or not is_instance_valid(character_detail_overlay):
+		character_detail_overlay = null
+		return
+	var target := character_detail_overlay
+	character_detail_overlay = null
+	target.hide()
+	target.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	target.queue_free()
+
+
+func select_character_from_detail(char_name: String) -> void:
+	if not selected_party.has(char_name) and selected_party.size() < 3:
+		selected_party.append(char_name)
+	elif selected_party.has(char_name):
+		selected_party.erase(char_name)
+	refresh_party_selection()
+	close_character_detail()
+
 
 
 func toggle_character_selection(char_name: String) -> void:
@@ -1345,6 +1804,7 @@ func start_new_run() -> void:
 	total_rounds = 0
 	moon_index = 1
 	round_moon_bonus = 0
+	round_moon_override = -1
 	beat = 0
 	measure = 1
 	measure_notes.clear()
@@ -1454,14 +1914,14 @@ func build_battle_header(root: VBoxContainer) -> void:
 
 func get_moon_effect_text_for_index(index: int) -> String:
 	match index:
-		0: return "自然奏力回復+2 / 到達時、奏力+1"
-		1: return "速さ+15% / 通常攻撃の奏力回復+1"
-		2: return "崩し+35% / 崩壊硬直延長"
-		3: return "与ダメージ+12%"
-		4: return "味方与ダメ+25% / 敵火力+25% / 崩壊追撃強化"
-		5: return "毒・火傷+50% / 敵への状態異常+1巡"
-		6: return "回復+30% / 防御性能強化"
-		7: return "弱体中の敵への与ダメ+15%"
+		0: return "恵：自然奏力回復+2 / 到達時、奏力+1　禍：味方与ダメ-8%"
+		1: return "恵：速さ+15% / 通常攻撃の奏力回復+1　禍：被ダメ+8%"
+		2: return "恵：崩し+35% / 崩壊硬直延長　禍：敵の構え削り+20%"
+		3: return "恵：与ダメージ+12%　禍：被ダメージ+8%"
+		4: return "恵：味方与ダメ+25% / 崩壊追撃強化　禍：敵火力+30% / 大技が危険"
+		5: return "恵：敵への毒・火傷+50% / 状態異常+1巡　禍：味方の毒・火傷も+50%"
+		6: return "恵：回復+30% / 防御性能強化　禍：味方与ダメ-10%"
+		7: return "恵：弱体中の敵へ与ダメ+15%　禍：自然奏力回復-1"
 		_: return "特殊補正なし"
 
 
@@ -1895,17 +2355,32 @@ func show_score_guide() -> void:
 	base_box.add_child(base_title)
 
 	var base_entries: Array[Dictionary] = [
-		{"name":"昇奏", "condition":"音が全体として上がる", "effect":"攻撃と崩しを強化", "color":Color("#e0ad63")},
-		{"name":"降奏", "condition":"音が全体として下がる", "effect":"生命と構えを回復", "color":Color("#8fb9d5")},
-		{"name":"重奏", "condition":"同じ音紋を三回以上重ねる", "effect":"攻撃を増幅", "color":Color("#c8a56d")},
-		{"name":"濁奏", "condition":"同じ音紋を四回以上重ねる", "effect":"強い攻撃強化。ただし味方の構えを消費", "color":Color("#9d6aa8")},
-		{"name":"返奏", "condition":"A→B→Aの返しを二度作る", "effect":"守りと構え回復", "color":Color("#a9c7c0")},
-		{"name":"静奏", "condition":"休符を二つ以上含める", "effect":"回復と立て直し", "color":Color("#d9dfda")},
-		{"name":"彩奏", "condition":"六種類以上の音紋を使う", "effect":"奏力と構えを広く回復", "color":Color("#d8b8cf")},
-		{"name":"合奏", "condition":"三人が参加し、四種類以上の音紋", "effect":"全員の奏力を補助", "color":Color("#d7bf84")},
-		{"name":"余韻", "condition":"他の奏式に届かなかった時", "effect":"大きな追加効果なし", "color":Color("#777b84")}
+		{"name":"昇奏　◆1", "condition":"音が全体として上がる", "effect":"攻撃と崩しを強化", "color":Color("#e0ad63")},
+		{"name":"降奏　◆1", "condition":"音が全体として下がる", "effect":"生命と構えを回復", "color":Color("#8fb9d5")},
+		{"name":"重奏　◆1", "condition":"同じ音紋を三回以上重ねる", "effect":"攻撃を増幅", "color":Color("#c8a56d")},
+		{"name":"濁奏　◆2", "condition":"同じ音紋を四回以上重ねる", "effect":"攻撃強化 / 味方の構えを少し消費", "color":Color("#9d6aa8")},
+		{"name":"返奏　◆2", "condition":"A→B→Aの返しを二度作る", "effect":"結界と構え回復", "color":Color("#a9c7c0")},
+		{"name":"彩奏　◆2", "condition":"六種類以上の音紋", "effect":"奏力と構えを広く回復", "color":Color("#d8b8cf")},
+		{"name":"合奏　◆1", "condition":"三人が参加し、四種類以上の音紋", "effect":"全員の奏力を補助", "color":Color("#d7bf84")},
+		{"name":"双極奏　◆2", "condition":"八拍を二種類の音だけで構成", "effect":"攻撃・崩しを同時強化", "color":Color("#c0a57c")},
+		{"name":"対々奏　◆3", "condition":"三〜四種類の音がすべて偶数枚", "effect":"構えを大きく回復", "color":Color("#bfae89")},
+		{"name":"四対奏　◆4", "condition":"四種類をちょうど二回ずつ", "effect":"奏力・構え・結界", "color":Color("#e0c687")},
+		{"name":"三三二奏　◆3", "condition":"音の枚数が3・3・2", "effect":"攻撃・崩し・奏力", "color":Color("#d0a873")},
+		{"name":"鏡奏　◆4", "condition":"A B C D｜D C B A", "effect":"強い結界と立て直し", "color":Color("#b9d5d0")},
+		{"name":"反復奏　◆4", "condition":"前半四拍と後半四拍が同じ", "effect":"長い攻撃強化", "color":Color("#d5b27c")},
+		{"name":"双柱奏　◆4", "condition":"A A A A｜B B B B", "effect":"長い崩し強化", "color":Color("#c7aa77")},
+		{"name":"二重輪奏　◆4", "condition":"A B A B A B A B", "effect":"味方のCTBを前進", "color":Color("#9fc8d9")},
+		{"name":"三環奏　◆4", "condition":"A B C A B C A B", "effect":"CTB前進・奏力回復", "color":Color("#b7cce2")},
+		{"name":"一色奏　◆6", "condition":"八拍すべて同じ音紋", "effect":"攻撃・崩しを大幅強化", "color":Color("#f0c978")},
+		{"name":"七音奏　◆5", "condition":"七種類の音紋すべてを含む", "effect":"全資源を大きく回復", "color":Color("#d9b8df")},
+		{"name":"七巡奏　◆6", "condition":"七音を順番に一巡して八拍目へ", "effect":"極大強化 / 敵構えを直接削る", "color":Color("#f2d58d")},
+		{"name":"三柱合奏　◆3", "condition":"三人参加・使う音は三種類以下", "effect":"奏力と構えを回復", "color":Color("#d5c38d")},
+		{"name":"渡月奏　◆3", "condition":"奏譜を保持し三つ以上の月相を跨ぐ", "effect":"生命・構え回復", "color":Color("#a7b9d0")},
+		{"name":"巡月奏　◆4", "condition":"奏譜を保持し四つ以上の月相を跨ぐ", "effect":"大きな立て直し", "color":Color("#b5a6d3")},
+		{"name":"月綴奏　◆3", "condition":"八拍中六拍以上が、その時の月と共鳴", "effect":"奏力・攻撃強化", "color":Color("#d9c584")},
+		{"name":"八響奏　◆7", "condition":"八拍すべてが、その時の月と共鳴", "effect":"奏力・構え回復 / 極大強化", "color":COL_GOLD_BRIGHT},
+		{"name":"余韻", "condition":"役が一つも成立しなかった時", "effect":"追加効果なし", "color":Color("#777b84")}
 	]
-
 	for entry in base_entries:
 		base_box.add_child(
 			make_score_guide_entry(
@@ -1931,7 +2406,7 @@ func show_score_guide() -> void:
 	lunar_box.add_child(lunar_title)
 
 	var lunar_intro := make_label(
-		"八拍のうち四拍以上が、その時の月の共鳴音紋なら基本奏式が月奏へ昇格する。",
+		"八拍のうち四拍以上が、鳴らした時の月と共鳴すると月奏が上乗せされる。基本役は消えず複合する。",
 		10,
 		Color("#8f929b")
 	)
@@ -1974,13 +2449,13 @@ func show_score_guide() -> void:
 			make_score_guide_entry(
 				char_name + "　" + get_ultimate_name(char_name),
 				"「%s」を完成" % get_ultimate_requirement(char_name),
-				ready_text + "　／　一度使用すると再び同じ奏譜が必要",
+				ready_text + "　／　指定奏譜を完成した時だけ解放",
 				COL_GOLD_BRIGHT if is_ultimate_ready(char_name) else Color("#8e7952")
 			)
 		)
 
 	var foot := make_label(
-		"※ 技ごとの音紋は特技選択画面に表示。月の共鳴音紋は奏譜上部に常時表示。",
+		"※ 防御は音紋を置かず奏譜を保持する。役は重複成立し、◆の合計が奏価。難しい役ほど奏格と効果が上がる。",
 		10,
 		Color("#696d75")
 	)
@@ -2276,6 +2751,7 @@ func prepare_party_for_battle() -> void:
 	ctb_last_wait.clear()
 	ctb_first_intro = true
 	score_banner_lock_until = 0
+	active_actor_name = ""
 
 	for char_name in party:
 		var source: Dictionary = CHARACTERS[char_name]
@@ -2297,6 +2773,9 @@ func prepare_party_for_battle() -> void:
 		# 同じ特技の連打を完全禁止せず、奏力と構えの代償を増やす。
 		state["last_skill_id"] = ""
 		state["repeat_count"] = 0
+		state["zanshin_ready"] = false
+		state["counter_power"] = 0.50
+		state["grave_marks"] = 0
 
 		party_state[char_name] = state
 
@@ -2308,6 +2787,7 @@ func prepare_enemy(index_value: int) -> void:
 	enemy_state["cur_hp"] = int(source["hp"])
 	enemy_state["cur_break"] = int(source["break_max"])
 	enemy_state["statuses"] = {}
+	enemy_state["grave_mark_rounds"] = 0
 	enemy_state["broken_rounds"] = 0
 	enemy_state["broken_on_round"] = -1
 	enemy_state["break_guard_rounds"] = 0
@@ -2323,7 +2803,15 @@ func prepare_enemy(index_value: int) -> void:
 	enemy_state["mechanic_counter"] = 0
 	enemy_state["score_disrupt_count"] = 0
 	enemy_state["moon_shift_count"] = 0
+	enemy_state["sealed_score_slots"] = 0
 	enemy_state_fx_signature = ""
+
+	battle_max_break_damage = 0
+	battle_damage_taken = 0
+	battle_score_count = 0
+	battle_best_score_value = 0
+	battle_best_score_name = ""
+	battle_last_completed_score = ""
 
 
 func sort_planning_entries(a: Dictionary, b: Dictionary) -> bool:
@@ -2456,51 +2944,61 @@ func get_action_wait_base(action_data: Dictionary) -> int:
 		"samurai_red_mist": return 86
 		"samurai_swallow_break": return 70
 		"samurai_aftermoon": return 98
+		"samurai_moon_chaser": return 104
 		"sennin_thunder": return 94
 		"sennin_moon_turn": return 76
 		"sennin_spring": return 106
 		"sennin_wind_read": return 68
 		"sennin_moon_hold": return 78
+		"sennin_moon_borrow": return 82
 		"kasa_pierce": return 90
 		"kasa_counter": return 66
 		"kasa_ward": return 104
 		"kasa_rain_armor": return 78
 		"kasa_thunder_guard": return 88
+		"kasa_ukemi_shigure": return 70
 		"miko_heal": return 80
 		"miko_cleanse": return 88
 		"miko_bless": return 110
 		"miko_bell_guard": return 72
 		"miko_divine_descent": return 126
+		"miko_bell_barrier": return 98
 		"chochin_foxfire": return 84
 		"chochin_lantern_drop": return 118
 		"chochin_dim": return 82
 		"chochin_ember_step": return 76
 		"chochin_burst": return 114
+		"chochin_wick_feast": return 102
 		"jusoshi_poison": return 84
 		"jusoshi_bind": return 92
 		"jusoshi_grudge": return 122
 		"jusoshi_extend": return 90
 		"jusoshi_abyss_mark": return 108
+		"jusoshi_curse_return": return 110
 		"kunoichi_shadow_bind": return 66
 		"kunoichi_poison_star": return 74
 		"kunoichi_mist_step": return 48
 		"kunoichi_ninja_return": return 56
 		"kunoichi_scatter_star": return 108
+		"kunoichi_shadow_cross": return 34
 		"shuten_oni_smash": return 112
 		"shuten_sake_flame": return 88
 		"shuten_drink_dry": return 64
 		"shuten_drunk_barrage": return 126
 		"shuten_hyakki_feast": return 102
+		"shuten_oni_drink": return 72
 		"kagurashi_rhythm_dance": return 70
 		"kagurashi_double_beat": return 84
 		"kagurashi_repose": return 86
 		"kagurashi_moon_call": return 72
 		"kagurashi_wild_kagura": return 116
+		"kagurashi_beat_return": return 76
 		"nekomata_cat_fire": return 76
 		"nekomata_twin_tail": return 72
 		"nekomata_feint": return 64
 		"nekomata_soul_lick": return 88
 		"nekomata_bakeneko_dance": return 112
+		"nekomata_soul_copy": return 86
 		_: return 92
 
 
@@ -2512,9 +3010,22 @@ func get_effective_action_wait(
 	var base := get_action_wait_base(action_data)
 	var speed := get_player_stat(char_name, "spd")
 	var result := maxi(36, base - int(round(float(speed) * 0.62)))
+
+	# 固有パッシブ：くノ一は特技の戻りが速い。
+	if char_name == "くノ一" and str(action_data.get("type", "")) == "skill":
+		result = int(round(float(result) * 0.88))
+
+	# 侍が自分で崩壊を取った直後だけ、次の戻りを大きく短縮。
+	if char_name == "侍" and bool(party_state[char_name].get("zanshin_ready", false)):
+		result = int(round(float(result) * 0.70))
+		if with_random:
+			var samurai_state: Dictionary = party_state[char_name]
+			samurai_state["zanshin_ready"] = false
+			party_state[char_name] = samurai_state
+
 	if with_random:
 		result += randi_range(-7, 7)
-	return maxi(32, result)
+	return maxi(28, result)
 
 
 func get_enemy_ctb_wait(with_random: bool = false) -> int:
@@ -2584,6 +3095,7 @@ func get_action_break_preview(char_name: String, action_data: Dictionary) -> int
 			"samurai_red_mist": multiplier = 0.90
 			"samurai_swallow_break": multiplier = 2.80 if int(enemy_state.get("big_state", 0)) > 0 else 1.20
 			"samurai_aftermoon": multiplier = 0.85
+			"samurai_moon_chaser": multiplier = 1.15 if int(enemy_state.get("broken_rounds", 0)) > 0 else 0.70
 			"sennin_thunder": multiplier = 0.85
 			"kasa_pierce": multiplier = 2.15
 			"kasa_thunder_guard": multiplier = 2.85 if int(enemy_state.get("big_state", 0)) > 0 else 1.65
@@ -2592,11 +3104,13 @@ func get_action_break_preview(char_name: String, action_data: Dictionary) -> int
 			"chochin_dim": multiplier = 0.65
 			"chochin_ember_step": multiplier = 0.70
 			"chochin_burst": multiplier = 1.55 if has_status(enemy_state, "burn") else 0.90
+			"chochin_wick_feast": multiplier = 1.25 if has_status(enemy_state, "burn") else 0.65
 			"jusoshi_poison": multiplier = 0.55
 			"jusoshi_bind": multiplier = 0.60
 			"jusoshi_grudge": multiplier = 0.75
 			"jusoshi_extend": multiplier = 0.55
 			"jusoshi_abyss_mark": multiplier = minf(2.20, 0.80 + float(count_enemy_negative_statuses()) * 0.35)
+			"jusoshi_curse_return": multiplier = minf(2.00, 0.60 + float(count_enemy_negative_statuses()) * 0.20)
 			"kunoichi_shadow_bind": multiplier = 1.05
 			"kunoichi_poison_star": multiplier = 0.70
 			"kunoichi_mist_step": multiplier = 0.55
@@ -2610,6 +3124,7 @@ func get_action_break_preview(char_name: String, action_data: Dictionary) -> int
 			"nekomata_feint": multiplier = 0.55
 			"nekomata_soul_lick": multiplier = 0.65
 			"nekomata_bakeneko_dance": multiplier = 1.25
+			"nekomata_soul_copy": multiplier = 0.65
 			_: multiplier = 0.0
 
 	if multiplier <= 0.0:
@@ -2642,6 +3157,8 @@ func get_tactical_action_preview(char_name: String, action_data: Dictionary) -> 
 
 	var score_notes := get_score_forecast_notes()
 	var score_text := get_combo_forecast_text(score_notes)
+	if str(action_data.get("type", "")) == "guard":
+		score_text = "保持 %d / %d　音紋を置かない" % [beat, SCORE_LENGTH]
 	var break_estimate := get_action_break_preview(char_name, action_data)
 	var break_text := "崩しなし"
 	if break_estimate > 0:
@@ -2768,8 +3285,8 @@ func show_main_commands(char_name: String) -> void:
 	var guard_action := {"type": "guard", "target": char_name}
 	var guard_wait := get_effective_action_wait(char_name, guard_action)
 	var guard_button := make_command_button(
-		"〔休〕　防御",
-		"被ダメージ軽減　構え+25　月+1　／　待ち %d　／　休符を奏譜へ置く" % guard_wait
+		"〔無音〕　防御",
+		"被ダメージ軽減　構え+25　／　待ち %d　／　奏譜を進めず、そのまま保持" % guard_wait
 	)
 	guard_button.pressed.connect(queue_guard.bind(char_name))
 	bind_ctb_preview(guard_button, char_name, guard_action)
@@ -3366,6 +3883,7 @@ func sort_turns_descending(a: Dictionary, b: Dictionary) -> bool:
 
 func perform_player_action(char_name: String, action_data: Dictionary) -> void:
 	var action_type := str(action_data.get("type", ""))
+	active_actor_name = char_name
 	active_score_note = get_action_note_type(action_data)
 
 	match action_type:
@@ -3386,6 +3904,7 @@ func perform_player_action(char_name: String, action_data: Dictionary) -> void:
 			append_log("[color=#b36c72]%sの行動情報が不正。通常攻撃へ置換せず中止。[/color]" % char_name)
 
 	active_score_note = ""
+	active_actor_name = ""
 
 
 func perform_basic_attack(char_name: String) -> void:
@@ -3456,11 +3975,10 @@ func perform_guard_action(char_name: String) -> void:
 		play_pixel_vfx("Hit Sparks/Parry Flash", guard_center, 2.8, 20.0)
 
 	advance_moon(1)
-	advance_beat(char_name, "休", "防御")
-
+	# 防御は奏譜へ音を置かない。拍を保持したまま次巡の月を待てる。
 	append_log(
-		"%sは[color=#9bb5d0]防御[/color]の構えを取った。"
-		% char_name
+		"%sは[color=#9bb5d0]防御[/color]の構え。奏譜は%d / %d拍のまま保持。"
+		% [char_name, beat, SCORE_LENGTH]
 	)
 
 	await get_tree().create_timer(0.18).timeout
@@ -3618,6 +4136,18 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				% [char_name, damage, "　構え+18" if was_broken else ""]
 			)
 
+		"samurai_moon_chaser":
+			var broken := int(enemy_state.get("broken_rounds", 0)) > 0
+			var power := 2.60 if broken else 1.35
+			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), power)
+			var break_damage := calculate_break_damage(int(state["break"]), 1.15 if broken else 0.70)
+			deal_damage_to_enemy(damage, break_damage)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			play_layered_attack(0.82 if broken else 0.94)
+			trigger_slash()
+			append_log("%s「[b]月影追い[/b]」　[color=#f0d17f]%d[/color] ダメージ%s" % [char_name, damage, "　崩壊追撃" if broken else ""])
+
 		"sennin_thunder":
 			var damage := calculate_damage(
 				get_player_stat(char_name, "mag"),
@@ -3708,6 +4238,17 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_moon(1)
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 
+		"sennin_moon_borrow":
+			var updated: Dictionary = party_state[char_name]
+			updated["cur_mana"] = mini(int(updated["mana"]), int(updated["cur_mana"]) + 2)
+			party_state[char_name] = updated
+			for ally_name in party:
+				if int(party_state[ally_name].get("cur_hp", 0)) > 0:
+					recover_player_stance(ally_name, 8)
+			advance_moon(1)
+			advance_beat(char_name, get_moon_resonant_note(moon_index), str(skill_data["name"]))
+			append_log("%s「[b]月借り[/b]」　今巡の月と共鳴する音を借り、奏力+2・味方構え+8。" % char_name)
+
 		"kasa_pierce":
 			var damage := calculate_damage(
 				get_player_stat(char_name, "atk"),
@@ -3783,6 +4324,17 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				% [char_name, break_damage]
 			)
 
+		"kasa_ukemi_shigure":
+			var updated: Dictionary = party_state[char_name]
+			updated["guarding"] = true
+			updated["counter"] = true
+			updated["counter_power"] = 0.80
+			party_state[char_name] = updated
+			recover_player_stance(char_name, 28)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]受流・時雨[/b]」　強防御。構え+28、次の被弾へ八割返し。" % char_name)
+
 		"miko_heal":
 			var target_name: String = str(action_data["target"])
 			if target_name == "" or int(party_state[target_name]["cur_hp"]) <= 0:
@@ -3804,6 +4356,7 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 
 		"miko_cleanse":
+			var cleansed_total := 0
 			for ally_name in party:
 				var ally_state: Dictionary = party_state[ally_name]
 				if int(ally_state["cur_hp"]) <= 0:
@@ -3816,8 +4369,9 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				)
 
 				heal_player(ally_name, heal_amount)
-				clear_negative_statuses(ally_name)
+				cleansed_total += clear_negative_statuses(ally_name)
 
+			grant_miko_cleanse_mana(char_name, cleansed_total)
 			advance_moon(1)
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 			append_log(
@@ -3875,6 +4429,21 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				"%s「[b]神降ろし[/b]」　味方全体を癒し、祝詞と結界を重ねた。"
 				% char_name
 			)
+
+		"miko_bell_barrier":
+			var cleansed_total := 0
+			for ally_name in party:
+				if int(party_state[ally_name].get("cur_hp", 0)) <= 0:
+					continue
+				add_player_status(ally_name, "ward", 2)
+				cleansed_total += clear_one_negative_status(ally_name)
+				var ally_state: Dictionary = party_state[ally_name]
+				ally_state["cur_mana"] = mini(int(ally_state["mana"]), int(ally_state["cur_mana"]) + 1)
+				party_state[ally_name] = ally_state
+			grant_miko_cleanse_mana(char_name, cleansed_total)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]御鈴結界[/b]」　結界2巡、弱体%d個を祓い、味方奏力+1。" % [char_name, cleansed_total])
 
 		"chochin_foxfire":
 			var damage := calculate_damage(
@@ -3981,6 +4550,22 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				% [char_name, damage, "　火傷を爆ぜさせた" if burning else ""]
 			)
 
+		"chochin_wick_feast":
+			var burning := has_status(enemy_state, "burn")
+			var power := 2.35 if burning else 0.95
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), power)
+			var break_power := 1.25 if burning else 0.65
+			if burning:
+				var statuses: Dictionary = enemy_state["statuses"]
+				statuses["burn"] = maxi(0, int(statuses.get("burn", 0)) - 1)
+				if int(statuses["burn"]) <= 0:
+					statuses.erase("burn")
+				enemy_state["statuses"] = statuses
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), break_power))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]灯芯喰い[/b]」　[color=#f2b66f]%d[/color] ダメージ%s" % [char_name, damage, "　火傷1巡を喰らった" if burning else ""])
+
 		"jusoshi_poison":
 			var damage := calculate_damage(
 				get_player_stat(char_name, "mag"),
@@ -4074,6 +4659,17 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 				% [char_name, weak_count, break_damage]
 			)
 
+		"jusoshi_curse_return":
+			var weak_count := count_enemy_negative_statuses()
+			var power := 1.15 * (1.0 + minf(1.0, float(weak_count) * 0.25))
+			var break_power := minf(2.00, 0.60 + float(weak_count) * 0.20)
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), power)
+			var break_damage := calculate_break_damage(int(state["break"]), break_power)
+			deal_damage_to_enemy(damage, break_damage)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]呪還し[/b]」　弱体%d種を返し [color=#cba1dc]%d[/color] ダメージ／崩し%d。" % [char_name, weak_count, damage, break_damage])
+
 		"kunoichi_shadow_bind":
 			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), 1.05)
 			var break_damage := calculate_break_damage(int(state["break"]), 1.05)
@@ -4119,6 +4715,14 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_moon(2)
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 			append_log("%s「[b]乱れ星[/b]」　[color=#d8e2eb]%d[/color] ダメージ。" % [char_name, damage])
+
+		"kunoichi_shadow_cross":
+			recover_player_stance(char_name, 16)
+			if ctb_times.has(char_name):
+				ctb_times[char_name] = maxf(ctb_clock + 2.0, float(ctb_times[char_name]) - 20.0)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]影渡り[/b]」　構え+16。次の刻へ一気に踏み込む。" % char_name)
 
 		"shuten_oni_smash":
 			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), 1.75)
@@ -4166,6 +4770,18 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_moon(2)
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 			append_log("%s「[b]百鬼宴[/b]」　味方の構えを整え、自身は昂揚した。" % char_name)
+
+		"shuten_oni_drink":
+			var updated: Dictionary = party_state[char_name]
+			var hp_cost := maxi(1, int(round(float(updated["hp"]) * 0.12)))
+			updated["cur_hp"] = maxi(1, int(updated["cur_hp"]) - hp_cost)
+			updated["cur_stance"] = int(updated["stance_max"])
+			updated["cur_mana"] = mini(int(updated["mana"]), int(updated["cur_mana"]) + 2)
+			party_state[char_name] = updated
+			add_player_status(char_name, "rage", 2)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]鬼呑み[/b]」　生命%dを代償に構え全快、昂揚2巡、奏力+2。" % [char_name, hp_cost])
 
 		"kagurashi_rhythm_dance":
 			for ally_name in party:
@@ -4221,6 +4837,20 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 			append_log("%s「[b]荒神楽[/b]」　[color=#e1b8d6]%d[/color] ダメージ%s" % [char_name, damage, "　満ちた奏譜を解き放った" if charged else ""])
 
+		"kagurashi_beat_return":
+			if measure_notes.size() >= 2:
+				var copied_mark := str(measure_notes[measure_notes.size() - 2].get("mark", ""))
+				if copied_mark != "" and copied_mark != "封":
+					var last_note: Dictionary = measure_notes[measure_notes.size() - 1]
+					last_note["mark"] = copied_mark
+					last_note["action_name"] = "拍返し・整音"
+					measure_notes[measure_notes.size() - 1] = last_note
+					append_log("[color=#d8c1e4]拍返し：直前の音を%sへ整えた。[/color]" % get_note_display(copied_mark))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			refresh_music_ui()
+			append_log("%s「[b]拍返し[/b]」　奏譜の形を整え、さらに一拍を重ねた。" % char_name)
+
 		"nekomata_cat_fire":
 			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 1.20)
 			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.70))
@@ -4268,6 +4898,191 @@ func perform_skill_action(char_name: String, action_data: Dictionary) -> void:
 			advance_beat(char_name, score_note, str(skill_data["name"]))
 			append_log("%s「[b]化生乱舞[/b]」　[color=#83d0c7]%d[/color] ダメージ。" % [char_name, damage])
 
+		"nekomata_soul_copy":
+			var weak_count := count_enemy_negative_statuses()
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 0.95)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.65))
+			var extended := extend_enemy_negative_statuses(1)
+			if weak_count >= 2:
+				var updated: Dictionary = party_state[char_name]
+				updated["cur_mana"] = mini(int(updated["mana"]), int(updated["cur_mana"]) + 2)
+				party_state[char_name] = updated
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]魂写し[/b]」　弱体%d種を1巡延長%s。" % [char_name, extended, "、奏力+2" if weak_count >= 2 else ""])
+
+
+		"yukionna_ice_needle":
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 1.25)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.70))
+			if ctb_times.has(CTB_ENEMY_KEY):
+				ctb_times[CTB_ENEMY_KEY] = float(ctb_times[CTB_ENEMY_KEY]) + 8.0
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]氷針[/b]」　冷気が敵の刻を遅らせた。" % char_name)
+
+		"yukionna_white_breath":
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 0.80)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.55))
+			add_enemy_status("atk_down", adjusted_enemy_status_turns(3))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]白息[/b]」　敵の攻めを凍らせた。" % char_name)
+
+		"yukionna_snow_veil":
+			for ally_name in party:
+				if int(party_state[ally_name]["cur_hp"]) <= 0:
+					continue
+				add_player_status(ally_name, "ward", 1)
+				recover_player_stance(ally_name, 12)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]雪化粧[/b]」　雪幕が味方を包む。" % char_name)
+
+		"yukionna_frozen_feet":
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 0.70)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 1.25))
+			if ctb_times.has(CTB_ENEMY_KEY):
+				ctb_times[CTB_ENEMY_KEY] = float(ctb_times[CTB_ENEMY_KEY]) + 20.0
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]凍足[/b]」　敵の足元ごと刻を凍らせた。" % char_name)
+
+		"yukionna_setsugekka":
+			var weakened := count_enemy_negative_statuses() > 0
+			var power := 2.45 if weakened else 1.85
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), power)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 1.05))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]雪月花[/b]」　[color=#bfeaff]%d[/color] ダメージ%s" % [char_name, damage, "　弱体追撃" if weakened else ""])
+
+		"yukionna_ice_mirror":
+			var updated: Dictionary = party_state[char_name]
+			updated["guarding"] = true
+			party_state[char_name] = updated
+			add_player_status(char_name, "ward", 2)
+			recover_player_stance(char_name, 22)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]氷鏡[/b]」　凍った鏡を盾に構えた。" % char_name)
+
+		"hakamori_grave_strike":
+			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), 1.30)
+			var break_damage := calculate_break_damage(get_player_stat(char_name, "break"), 2.20)
+			deal_damage_to_enemy(damage, break_damage)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]墓打ち[/b]」　崩し %d。" % [char_name, break_damage])
+
+		"hakamori_gravemark":
+			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), 0.75)
+			deal_damage_to_enemy(damage, calculate_break_damage(get_player_stat(char_name, "break"), 0.80))
+			add_enemy_status("def_down", adjusted_enemy_status_turns(2))
+			enemy_state["grave_mark_rounds"] = 3
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]墓標立て[/b]」　敵へ墓標を刻んだ。" % char_name)
+
+		"hakamori_burial":
+			var marked := int(enemy_state.get("grave_mark_rounds", 0)) > 0
+			var power := 2.45 if marked else 1.55
+			var damage := calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), power)
+			deal_damage_to_enemy(damage, calculate_break_damage(get_player_stat(char_name, "break"), 1.45 if marked else 1.00))
+			if marked:
+				enemy_state["grave_mark_rounds"] = 0
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]土葬[/b]」　[color=#c5b59a]%d[/color] ダメージ%s" % [char_name, damage, "　墓標を埋葬" if marked else ""])
+
+		"hakamori_guardian":
+			for ally_name in party:
+				if int(party_state[ally_name]["cur_hp"]) > 0:
+					add_player_status(ally_name, "ward", 1)
+			var updated: Dictionary = party_state[char_name]
+			updated["guarding"] = true
+			party_state[char_name] = updated
+			recover_player_stance(char_name, 20)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]墓守り[/b]」　死者の静けさが味方を守る。" % char_name)
+
+		"hakamori_requiem":
+			for ally_name in party:
+				if int(party_state[ally_name]["cur_hp"]) <= 0:
+					continue
+				var statuses: Dictionary = party_state[ally_name]["statuses"]
+				statuses.erase("poison")
+				statuses.erase("burn")
+				party_state[ally_name]["statuses"] = statuses
+				recover_player_stance(ally_name, 16)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]鎮魂[/b]」　毒と火傷を鎮め、構えを戻した。" % char_name)
+
+		"hakamori_return":
+			var target_name := str(action_data.get("target", ""))
+			if target_name == "" or not party_state.has(target_name) or int(party_state[target_name]["cur_hp"]) <= 0:
+				target_name = find_lowest_hp_ally()
+			if target_name != "":
+				var target_state: Dictionary = party_state[target_name]
+				var ratio := float(target_state["cur_hp"]) / maxf(1.0, float(target_state["hp"]))
+				var heal_mult := 1.45 if ratio <= 0.35 else (1.10 if ratio <= 0.65 else 0.82)
+				var heal_amount := calculate_heal(get_player_stat(char_name, "atk"), heal_mult, 8)
+				heal_player(target_name, heal_amount)
+				recover_player_stance(target_name, 18)
+				append_log("%s「[b]冥土返し[/b]」　%sを%d回復。" % [char_name, target_name, heal_amount])
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+
+		"onmyoji_white_shikigami":
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 1.05)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.65))
+			var target_name := find_lowest_hp_ally()
+			if target_name != "":
+				heal_player(target_name, calculate_heal(get_player_stat(char_name, "mag"), 0.55, 5))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]式神・白[/b]」　白き式が傷を結んだ。" % char_name)
+
+		"onmyoji_black_shikigami":
+			var damage := calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 1.15)
+			deal_damage_to_enemy(damage, calculate_break_damage(int(state["break"]), 0.70))
+			add_enemy_status("def_down", adjusted_enemy_status_turns(2))
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]式神・黒[/b]」　黒き式が守りを喰らう。" % char_name)
+
+		"onmyoji_yin_turn":
+			set_next_round_moon(moon_index - 1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]陰転[/b]」　次巡を【%s】へ定めた。" % [char_name, PHASES[get_next_round_moon_index()]])
+
+		"onmyoji_yang_turn":
+			set_next_round_moon(moon_index + 2)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]陽転[/b]」　次巡を【%s】へ定めた。" % [char_name, PHASES[get_next_round_moon_index()]])
+
+		"onmyoji_barrier":
+			for ally_name in party:
+				if int(party_state[ally_name]["cur_hp"]) > 0:
+					add_player_status(ally_name, "ward", 2)
+					recover_player_stance(ally_name, 8)
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			append_log("%s「[b]結界符[/b]」　四方を符で封じた。" % char_name)
+
+		"onmyoji_score_talisman":
+			if not measure_notes.is_empty():
+				var last_note: Dictionary = measure_notes[measure_notes.size() - 1]
+				last_note["mark"] = get_moon_resonant_note(moon_index)
+				last_note["action_name"] = "奏替符・改音"
+				measure_notes[measure_notes.size() - 1] = last_note
+			advance_moon(1)
+			advance_beat(char_name, score_note, str(skill_data["name"]))
+			refresh_music_ui()
+			append_log("%s「[b]奏替符[/b]」　直前の音を月へ寄せ、さらに一拍を刻んだ。" % char_name)
+
 	await get_tree().create_timer(0.24).timeout
 
 
@@ -4294,7 +5109,7 @@ func get_enemy_mechanic_text() -> String:
 	match str(enemy_state.get("id", "")):
 		"moon_oni": return phase_text + "砕月　通常被害↓・崩し↑"
 		"fire_spider": return phase_text + "火繭　味方の火傷が多いほど加速"
-		"bone_monk": return phase_text + "逆笛　奏譜へ乱拍を差し込む"
+		"bone_monk": return phase_text + "逆笛　奏譜の拍を封じる"
 		"dark_tengu": return phase_text + "迅天　行動順を押し流す"
 		"eclipse_lady": return phase_text + "月蝕　月相を動かす"
 		_: return phase_text
@@ -4329,14 +5144,14 @@ func disturb_score_notes(amount: int) -> void:
 		if changed >= amount:
 			break
 		var note: Dictionary = measure_notes[i]
-		if str(note.get("mark", "")) == "休":
+		if str(note.get("mark", "")) == "封":
 			continue
-		note["mark"] = "休"
-		note["action_name"] = "乱拍"
+		note["mark"] = "封"
+		note["action_name"] = "封拍"
 		measure_notes[i] = note
 		changed += 1
 	if changed > 0:
-		append_log("[color=#ad91ba]逆笛：直前の%d拍が乱された。[/color]" % changed)
+		append_log("[color=#ad91ba]逆笛：直前の%d拍が封じられた。[/color]" % changed)
 		refresh_music_ui()
 
 
@@ -4347,9 +5162,43 @@ func push_party_timeline(amount: float) -> void:
 	refresh_turn_order_bar()
 
 
+func pull_party_timeline(amount: float) -> void:
+	for char_name in party:
+		if ctb_times.has(char_name) and int(party_state[char_name].get("cur_hp", 0)) > 0:
+			ctb_times[char_name] = maxf(ctb_clock + 2.0, float(ctb_times[char_name]) - amount)
+	refresh_turn_order_bar()
+
+
 func pull_enemy_timeline(amount: float) -> void:
 	if ctb_times.has(CTB_ENEMY_KEY):
 		ctb_times[CTB_ENEMY_KEY] = maxf(ctb_clock + 3.0, float(ctb_times[CTB_ENEMY_KEY]) - amount)
+	refresh_turn_order_bar()
+
+
+func swap_party_timeline_extremes() -> void:
+	var living: Array[String] = []
+	for char_name in party:
+		if ctb_times.has(char_name) and int(party_state[char_name].get("cur_hp", 0)) > 0:
+			living.append(char_name)
+	if living.size() < 2:
+		return
+	var first: String = living[0]
+	var last: String = living[0]
+	var first_time: float = float(ctb_times.get(first, 9999.0))
+	var last_time: float = first_time
+	for char_name in living:
+		var current_time: float = float(ctb_times.get(char_name, 9999.0))
+		if current_time < first_time:
+			first_time = current_time
+			first = char_name
+		if current_time > last_time:
+			last_time = current_time
+			last = char_name
+	if first == last:
+		return
+	ctb_times[first] = last_time
+	ctb_times[last] = first_time
+	append_log("[color=#9aa8c6]迅天：%sと%sの刻が入れ替わった。[/color]" % [first, last])
 	refresh_turn_order_bar()
 
 
@@ -4450,14 +5299,25 @@ func apply_enemy_identity_end_round() -> void:
 					int(enemy_state["break_max"]),
 					int(enemy_state["cur_break"]) + int(round(float(enemy_state["break_max"]) * rate))
 				)
+				if is_enemy_second_phase() and float(enemy_state["cur_break"]) / maxf(1.0, float(enemy_state["break_max"])) >= 0.78:
+					enemy_state["next_big_round"] = mini(int(enemy_state.get("next_big_round", round_number + 2)), round_number + 1)
+					append_log("[color=#c08365]砕月：崩し切れなければ大技が迫る。[/color]")
 		"fire_spider":
 			var burning := count_burning_allies()
 			if burning > 0:
-				pull_enemy_timeline(float(burning) * (5.0 if is_enemy_second_phase() else 3.0))
+				pull_enemy_timeline(float(burning) * (6.0 if is_enemy_second_phase() else 3.0))
 			if is_enemy_second_phase() and burning >= 2:
-				var heal := maxi(1, int(round(float(enemy_state["hp"]) * 0.025)))
+				var heal := maxi(1, int(round(float(enemy_state["hp"]) * (0.035 if burning >= 3 else 0.025))))
 				enemy_state["cur_hp"] = mini(int(enemy_state["hp"]), int(enemy_state["cur_hp"]) + heal)
-				append_log("[color=#d7825d]焔繭が火傷を喰らい、%d回復。[/color]" % heal)
+				if burning >= 3:
+					add_enemy_status("rage", 2)
+				append_log("[color=#d7825d]焔繭が火傷を喰らい、%d回復%s。[/color]" % [heal, "・昂揚" if burning >= 3 else ""])
+		"bone_monk":
+			# 奏譜干渉は行動時に発生。第二相では頻度と封拍数が増える。
+			pass
+		"dark_tengu":
+			# 行動順の押し流し・入れ替えは行動時に発生。
+			pass
 		"eclipse_lady":
 			if is_enemy_second_phase():
 				enemy_moon_shift(1)
@@ -4537,7 +5397,11 @@ func perform_enemy_action() -> void:
 				await enemy_single_attack("亡呪", 0.82, "magic", "atk_down", 14)
 
 		"dark_tengu":
-			if (phase2 and roll < 48) or (not phase2 and roll < 22):
+			if phase2 and roll < 24:
+				swap_party_timeline_extremes()
+				pull_enemy_timeline(12.0)
+				await enemy_party_attack("逆風返し", 0.52, "magic", "", 15)
+			elif (phase2 and roll < 52) or (not phase2 and roll < 22):
 				push_party_timeline(18.0 if phase2 else 11.0)
 				pull_enemy_timeline(10.0 if phase2 else 5.0)
 				await enemy_party_attack("乱天", 0.58, "magic", "", 16)
@@ -4690,11 +5554,15 @@ func maybe_counter(target_name: String) -> void:
 	if int(state["cur_hp"]) <= 0:
 		return
 
+	var counter_power := float(state.get("counter_power", 0.50))
 	var counter_damage: int = calculate_damage(
 		get_player_stat(target_name, "atk"),
 		get_enemy_stat("def"),
-		0.50
+		counter_power
 	)
+	state["counter"] = false
+	state["counter_power"] = 0.50
+	party_state[target_name] = state
 
 	enemy_state["cur_hp"] = maxi(
 		0,
@@ -4787,19 +5655,36 @@ func deal_damage_to_enemy(
 			final_damage = int(round(float(final_damage) * 1.10))
 			final_break = int(round(float(final_break) * 1.12))
 
-	# 月相そのものが攻撃のルールを変える。
-	if moon_index == 3:
+	# 月相は恵みだけでなく禍も持つ。待てば必ず得、にはしない。
+	if moon_index == 0:
+		final_damage = int(round(float(final_damage) * 0.92))
+	elif moon_index == 3:
 		final_damage = int(round(float(final_damage) * 1.12))
 	elif moon_index == 4:
 		final_damage = int(round(float(final_damage) * 1.25))
+	elif moon_index == 6:
+		final_damage = int(round(float(final_damage) * 0.90))
 	elif moon_index == 7 and count_enemy_negative_statuses() > 0:
 		final_damage = int(round(float(final_damage) * 1.15))
 
 	if combo_damage_rounds > 0:
 		final_damage = int(round(float(final_damage) * 1.15))
 
+	# 攻撃中の固有パッシブ。
+	if active_actor_name == "提灯使い" and has_status(enemy_state, "burn"):
+		final_damage = int(round(float(final_damage) * 1.15))
+	elif active_actor_name == "酒呑童子" and party_state.has("酒呑童子"):
+		var shuten_state: Dictionary = party_state["酒呑童子"]
+		var shuten_ratio := float(shuten_state.get("cur_hp", 0)) / maxf(1.0, float(shuten_state.get("hp", 1)))
+		if shuten_ratio <= 0.50:
+			final_break = int(round(float(final_break) * 1.20))
+	elif active_actor_name == "雪女" and count_enemy_negative_statuses() > 0:
+		if ctb_times.has(CTB_ENEMY_KEY):
+			ctb_times[CTB_ENEMY_KEY] = float(ctb_times[CTB_ENEMY_KEY]) + 4.0
+
 	final_damage = maxi(1, int(round(float(final_damage) * get_enemy_damage_taken_modifier())))
 	final_break = maxi(0, int(round(float(final_break) * get_enemy_break_taken_modifier())))
+	battle_max_break_damage = maxi(battle_max_break_damage, final_break)
 
 	if int(enemy_state["broken_rounds"]) > 0:
 		var broken_multiplier := 1.60 if moon_index == 4 else 1.35
@@ -4854,6 +5739,12 @@ func trigger_enemy_break() -> void:
 		% str(enemy_state["name"])
 	)
 
+	if active_actor_name == "侍" and party_state.has("侍"):
+		var samurai_state: Dictionary = party_state["侍"]
+		samurai_state["zanshin_ready"] = true
+		party_state["侍"] = samurai_state
+		append_log("[color=#e7cf91]残心：崩壊を見切り、次の侍の行動が速まる。[/color]")
+
 	play_one_shot(break_player)
 	duck_battle_bgm(-21.0, 0.40)
 	play_break_banner()
@@ -4873,6 +5764,21 @@ func damage_player_character(
 		0,
 		int(state["cur_hp"]) - damage
 	)
+	battle_damage_taken += maxi(0, damage)
+
+	# 雨受け：防御中に攻撃を受けるほど立て直せる。
+	if char_name == "傘使い" and bool(state.get("guarding", false)) and int(state["cur_hp"]) > 0:
+		state["cur_mana"] = mini(int(state["mana"]), int(state["cur_mana"]) + 1)
+		state["cur_stance"] = mini(int(state["stance_max"]), int(state["cur_stance"]) + 8)
+		append_log("[color=#9dc5d9]雨受け：奏力+1 / 構え+8[/color]")
+
+	# 墓標：被弾を蓄積して守りと崩しへ変える。
+	if char_name == "墓守" and damage > 0 and int(state["cur_hp"]) > 0:
+		state["grave_marks"] = mini(5, int(state.get("grave_marks", 0)) + 1)
+		state["cur_stance"] = mini(int(state["stance_max"]), int(state["cur_stance"]) + 5)
+		if int(state["grave_marks"]) == 3:
+			append_log("[color=#b9aa92]墓標が三つ揃った。墓守の守りと崩しが強まる。[/color]")
+
 	party_state[char_name] = state
 
 	if int(state["cur_hp"]) > 0 and stance_damage > 0:
@@ -4888,6 +5794,8 @@ func apply_player_stance_damage(char_name: String, amount: int, reason: String =
 		return
 
 	var final_amount := float(amount)
+	if moon_index == 2 and reason == "敵の攻撃":
+		final_amount *= 1.20
 	if bool(state.get("guarding", false)):
 		final_amount *= 0.45
 	if has_status(state, "ward"):
@@ -4959,6 +5867,8 @@ func apply_player_defense_modifiers(
 
 	if bool(state["guarding"]):
 		var guard_rate := 0.32 if moon_index == 6 else 0.50
+		if char_name == "傘使い":
+			guard_rate *= 0.82
 		result *= guard_rate
 
 	if has_status(state, "ward"):
@@ -4995,6 +5905,25 @@ func get_player_stat(
 			value *= 0.90
 	elif stat_key == "spd" and moon_index == 1:
 		value *= 1.15
+
+	# 固有パッシブによる常時補正。
+	if char_name == "侍" and stat_key == "atk" and int(enemy_state.get("broken_rounds", 0)) > 0:
+		value *= 1.20
+	elif char_name == "呪詛師" and stat_key == "mag":
+		value *= 1.0 + 0.06 * float(mini(4, count_enemy_negative_statuses()))
+	elif char_name == "酒呑童子" and stat_key == "atk":
+		var hp_ratio := float(state.get("cur_hp", 0)) / maxf(1.0, float(state.get("hp", 1)))
+		if hp_ratio <= 0.50:
+			value *= 1.25
+	elif char_name == "猫又" and (stat_key == "atk" or stat_key == "mag"):
+		if count_enemy_negative_statuses() >= 2:
+			value *= 1.18
+	elif char_name == "墓守":
+		var grave_marks := int(state.get("grave_marks", 0))
+		if grave_marks >= 3 and stat_key == "break":
+			value *= 1.20
+		if grave_marks >= 3 and (stat_key == "def" or stat_key == "res"):
+			value *= 1.10
 
 	return maxi(1, int(round(value)))
 
@@ -5100,15 +6029,39 @@ func has_status(
 	return statuses.has(status_key) and int(statuses[status_key]) > 0
 
 
-func clear_negative_statuses(char_name: String) -> void:
+func clear_negative_statuses(char_name: String) -> int:
 	var state: Dictionary = party_state[char_name]
 	var statuses: Dictionary = state["statuses"]
-
+	var removed := 0
 	for status_key in NEGATIVE_STATUSES:
+		if statuses.has(status_key) and int(statuses[status_key]) > 0:
+			removed += 1
 		statuses.erase(status_key)
-
 	state["statuses"] = statuses
 	party_state[char_name] = state
+	return removed
+
+
+func clear_one_negative_status(char_name: String) -> int:
+	var state: Dictionary = party_state[char_name]
+	var statuses: Dictionary = state.get("statuses", {})
+	for status_key in NEGATIVE_STATUSES:
+		if statuses.has(status_key) and int(statuses[status_key]) > 0:
+			statuses.erase(status_key)
+			state["statuses"] = statuses
+			party_state[char_name] = state
+			return 1
+	return 0
+
+
+func grant_miko_cleanse_mana(miko_name: String, removed_count: int) -> void:
+	if miko_name != "巫女" or removed_count <= 0 or not party_state.has(miko_name):
+		return
+	var state: Dictionary = party_state[miko_name]
+	var gain := mini(2, removed_count)
+	state["cur_mana"] = mini(int(state["mana"]), int(state["cur_mana"]) + gain)
+	party_state[miko_name] = state
+	append_log("[color=#f0d99b]清奏：祓いに応じて巫女の奏力+%d。[/color]" % gain)
 
 
 func count_enemy_negative_statuses() -> int:
@@ -5239,6 +6192,11 @@ func apply_end_of_round_effects() -> void:
 
 		party_state[char_name] = state
 
+	if int(enemy_state.get("grave_mark_rounds", 0)) > 0:
+		enemy_state["grave_mark_rounds"] = int(enemy_state["grave_mark_rounds"]) - 1
+		if int(enemy_state["grave_mark_rounds"]) <= 0:
+			append_log("[color=#877d70]敵に立てた墓標が崩れた。[/color]")
+
 	# Enemy DOT
 	if has_status(enemy_state, "poison"):
 		var enemy_poison: int = maxi(
@@ -5302,6 +6260,8 @@ func get_mana_regen_amount(state: Dictionary) -> int:
 		amount += 2
 	elif moon_index == 4:
 		amount -= 1
+	elif moon_index == 7:
+		amount -= 1
 
 	return maxi(0, amount)
 
@@ -5327,16 +6287,27 @@ func queue_enemy_moon_shift(amount: int) -> void:
 
 
 func get_next_round_moon_index(extra_bonus: int = 0) -> int:
+	if round_moon_override >= 0:
+		return (round_moon_override + maxi(0, extra_bonus)) % PHASES.size()
 	var total_steps := 1 + maxi(0, round_moon_bonus + extra_bonus)
 	return (moon_index + total_steps) % PHASES.size()
 
 
-func commit_next_round_moon() -> void:
-	var total_steps := 1 + maxi(0, round_moon_bonus)
-	var old_index := moon_index
-
-	moon_index = (moon_index + total_steps) % PHASES.size()
+func set_next_round_moon(index: int) -> void:
+	round_moon_override = posmod(index, PHASES.size())
 	round_moon_bonus = 0
+	refresh_moon_forecast()
+
+
+func commit_next_round_moon() -> void:
+	var old_index := moon_index
+	if round_moon_override >= 0:
+		moon_index = round_moon_override
+	else:
+		var total_steps := 1 + maxi(0, round_moon_bonus)
+		moon_index = (moon_index + total_steps) % PHASES.size()
+	round_moon_bonus = 0
+	round_moon_override = -1
 
 	if moon_index != old_index:
 		apply_moon_arrival_effect(moon_index)
@@ -5416,15 +6387,21 @@ func resolve_measure() -> void:
 
 	var completed_notes: Array[Dictionary] = []
 	for note_variant in measure_notes:
-		var completed_note: Dictionary = note_variant
-		completed_notes.append(completed_note.duplicate(true))
+		var note: Dictionary = note_variant
+		completed_notes.append(note.duplicate(true))
 
 	var combo := detect_score_combo(completed_notes)
 	var combo_name := str(combo["name"])
 	var is_moon_combo := bool(combo["moon_combo"])
-	last_combo_name = combo_name
+	var score_value := int(combo.get("score_value", 0))
+	var score_rank := str(combo.get("rank", "小奏"))
+	var role_names: Array[String] = []
+	for role_variant in combo.get("roles", []):
+		var role: Dictionary = role_variant
+		role_names.append(str(role.get("name", "")))
 
-	apply_score_combo_effect(combo_name, is_moon_combo)
+	last_combo_name = combo_name
+	apply_score_combo_effect(combo)
 
 	var performer_set: Dictionary = {}
 	for note_variant in completed_notes:
@@ -5439,10 +6416,23 @@ func resolve_measure() -> void:
 			state["cur_mana"] = mini(int(state["mana"]), int(state["cur_mana"]) + 1)
 			party_state[char_name] = state
 
-	var unlocked_finishers := unlock_finishers_from_score(combo_name)
+	var unlocked_finishers := unlock_finishers_from_combo(combo)
 	var finisher_unlock_text := get_finisher_unlock_text(unlocked_finishers)
 
-	last_measure_text = "第%d奏譜「%s」" % [measure, combo_name]
+	battle_score_count += 1
+	battle_last_completed_score = combo_name
+	if score_value > battle_best_score_value:
+		battle_best_score_value = score_value
+		battle_best_score_name = combo_name
+
+	last_measure_text = "第%d奏譜「%s」　奏格%s / 奏価%d" % [
+		measure,
+		combo_name,
+		score_rank,
+		score_value
+	]
+	if role_names.size() > 1:
+		last_measure_text += "　重なり：" + "・".join(role_names)
 	if performer_set.size() >= 3:
 		last_measure_text += "　合奏：奏力 +1"
 
@@ -5451,7 +6441,21 @@ func resolve_measure() -> void:
 		append_log("[color=#f0d486][b]%s[/b][/color]" % finisher_unlock_text)
 
 	append_log("[color=#9fb5d2][b]%s[/b][/color]" % last_measure_text)
-	score_banner_lock_until = Time.get_ticks_msec() + (2050 if is_moon_combo else 1650)
+
+	var rank_hold := 0
+	match score_rank:
+		"中奏": rank_hold = 180
+		"大奏": rank_hold = 420
+		"極奏": rank_hold = 760
+
+	# 奏譜名を出した後、成立役を一つずつ加算表示する時間も行動進行を止める。
+	var tally_steps := role_names.size() + (1 if is_moon_combo else 0)
+	var tally_hold := maxi(1, tally_steps) * 360
+	var unlock_hold := 720 if not finisher_unlock_text.is_empty() else 0
+	score_banner_lock_until = Time.get_ticks_msec() + (
+		1850 + rank_hold + tally_hold + unlock_hold
+	)
+
 	show_score_completion_banner(
 		combo_name,
 		is_moon_combo,
@@ -5459,10 +6463,12 @@ func resolve_measure() -> void:
 		finisher_unlock_text
 	)
 
+
 func detect_score_combo(notes: Array) -> Dictionary:
 	var marks: Array[String] = []
 	var performers: Dictionary = {}
 	var unique_pitches: Dictionary = {}
+	var phase_set: Dictionary = {}
 	var resonance_count := 0
 	var final_phase := moon_index
 
@@ -5472,29 +6478,257 @@ func detect_score_combo(notes: Array) -> Dictionary:
 		var phase := int(note.get("phase", moon_index))
 		marks.append(mark)
 		performers[str(note.get("actor", ""))] = true
+		phase_set[phase] = true
 		final_phase = phase
 		if get_note_value(mark) >= 0:
 			unique_pitches[mark] = true
 			if is_note_resonant(mark, phase):
 				resonance_count += 1
 
-	var base_name := detect_melody_shape(marks, performers.size(), unique_pitches.size())
-	var moon_combo := resonance_count >= 4 and base_name != "余韻"
+	var roles := detect_score_roles(
+		marks,
+		performers,
+		unique_pitches,
+		phase_set,
+		resonance_count
+	)
+	roles.sort_custom(sort_score_roles_desc)
 
+	var base_name := "余韻"
+	if not roles.is_empty():
+		var primary_role: Dictionary = roles[0]
+		base_name = str(primary_role.get("name", "余韻"))
+
+	var pitch_count := 0
+	for mark in marks:
+		if get_note_value(mark) >= 0:
+			pitch_count += 1
+
+	# 月奏は「その月で鳴らした音が共鳴した数」で成立。
+	# 防御は拍を置かないため、月を待って4共鳴以上を狙える。
+	var moon_combo := resonance_count >= 4 and pitch_count >= 4
+	var moon_bonus := 0
 	if moon_combo:
-		return {
-			"name": get_lunar_combo_name(final_phase, base_name),
-			"moon_combo": true,
-			"base": base_name,
-			"resonance": resonance_count
-		}
+		moon_bonus = 2 + maxi(0, resonance_count - 4)
+
+	var score_value := moon_bonus
+	for role_variant in roles:
+		var role: Dictionary = role_variant
+		score_value += int(role.get("value", 0))
+
+	var rank := get_score_rank(score_value)
+	var final_name := get_lunar_combo_name(final_phase, base_name) if moon_combo else base_name
 
 	return {
-		"name": base_name,
-		"moon_combo": false,
+		"name": final_name,
+		"moon_combo": moon_combo,
 		"base": base_name,
-		"resonance": resonance_count
+		"resonance": resonance_count,
+		"roles": roles,
+		"score_value": score_value,
+		"rank": rank,
+		"phase_count": phase_set.size()
 	}
+
+
+func detect_score_roles(
+	marks: Array[String],
+	performers: Dictionary,
+	unique_pitches: Dictionary,
+	phase_set: Dictionary,
+	resonance_count: int
+) -> Array[Dictionary]:
+	var roles: Array[Dictionary] = []
+	var pitch_marks: Array[String] = []
+	var pitches: Array[int] = []
+	var counts: Dictionary = {}
+
+	for mark in marks:
+		var value := get_note_value(mark)
+		if value < 0:
+			continue
+		pitch_marks.append(mark)
+		pitches.append(value)
+		counts[mark] = int(counts.get(mark, 0)) + 1
+
+	var unique_pitch_count := unique_pitches.size()
+	var performer_count := performers.size()
+
+	# 基本役
+	var return_patterns := 0
+	for i in range(maxi(0, pitch_marks.size() - 2)):
+		if pitch_marks[i] == pitch_marks[i + 2] and pitch_marks[i] != pitch_marks[i + 1]:
+			return_patterns += 1
+	if return_patterns >= 2:
+		roles.append(make_score_role("返奏", 2))
+
+	var max_same := 0
+	for pitch_name in NOTE_ORDER:
+		max_same = maxi(max_same, int(counts.get(pitch_name, 0)))
+	if max_same >= 3:
+		roles.append(make_score_role("重奏", 1))
+	if max_same >= 4:
+		roles.append(make_score_role("濁奏", 2))
+
+	var trend := 0
+	for i in range(maxi(0, pitches.size() - 1)):
+		if pitches[i + 1] > pitches[i]:
+			trend += 1
+		elif pitches[i + 1] < pitches[i]:
+			trend -= 1
+	if pitches.size() >= 5 and trend >= 3:
+		roles.append(make_score_role("昇奏", 1))
+	if pitches.size() >= 5 and trend <= -3:
+		roles.append(make_score_role("降奏", 1))
+
+	if unique_pitch_count >= 6:
+		roles.append(make_score_role("彩奏", 2))
+	if performer_count >= 3 and unique_pitch_count >= 4:
+		roles.append(make_score_role("合奏", 1))
+
+	# ここから高位役。8拍の「形」そのものを役にする。
+	if pitch_marks.size() == SCORE_LENGTH:
+		if unique_pitch_count == 2:
+			var two_ok := true
+			for count_value in counts.values():
+				if int(count_value) < 3:
+					two_ok = false
+			if two_ok:
+				roles.append(make_score_role("双極奏", 2))
+
+		var all_even := unique_pitch_count >= 3 and unique_pitch_count <= 4
+		for count_value in counts.values():
+			if int(count_value) % 2 != 0:
+				all_even = false
+		if all_even:
+			roles.append(make_score_role("対々奏", 3))
+
+		var four_pairs := unique_pitch_count == 4
+		if four_pairs:
+			for count_value in counts.values():
+				if int(count_value) != 2:
+					four_pairs = false
+		if four_pairs:
+			roles.append(make_score_role("四対奏", 4))
+
+		if unique_pitch_count == 3:
+			var count_list: Array[int] = []
+			for count_value in counts.values():
+				count_list.append(int(count_value))
+			count_list.sort()
+			if count_list == [2, 3, 3]:
+				roles.append(make_score_role("三三二奏", 3))
+
+		var mirror_ok := true
+		for i in range(4):
+			if pitch_marks[i] != pitch_marks[7 - i]:
+				mirror_ok = false
+				break
+		if mirror_ok:
+			roles.append(make_score_role("鏡奏", 4))
+
+		var repeat_ok := true
+		for i in range(4):
+			if pitch_marks[i] != pitch_marks[i + 4]:
+				repeat_ok = false
+				break
+		if repeat_ok:
+			roles.append(make_score_role("反復奏", 4))
+
+		var twin_pillars := (
+			pitch_marks[0] == pitch_marks[1]
+			and pitch_marks[1] == pitch_marks[2]
+			and pitch_marks[2] == pitch_marks[3]
+			and pitch_marks[4] == pitch_marks[5]
+			and pitch_marks[5] == pitch_marks[6]
+			and pitch_marks[6] == pitch_marks[7]
+			and pitch_marks[0] != pitch_marks[4]
+		)
+		if twin_pillars:
+			roles.append(make_score_role("双柱奏", 4))
+
+		var period_two := true
+		for i in range(2, SCORE_LENGTH):
+			if pitch_marks[i] != pitch_marks[i % 2]:
+				period_two = false
+				break
+		if period_two and pitch_marks[0] != pitch_marks[1]:
+			roles.append(make_score_role("二重輪奏", 4))
+
+		var period_three := true
+		for i in range(3, SCORE_LENGTH):
+			if pitch_marks[i] != pitch_marks[i % 3]:
+				period_three = false
+				break
+		if (
+			period_three
+			and pitch_marks[0] != pitch_marks[1]
+			and pitch_marks[1] != pitch_marks[2]
+			and pitch_marks[0] != pitch_marks[2]
+		):
+			roles.append(make_score_role("三環奏", 4))
+
+		if unique_pitch_count == 1:
+			roles.append(make_score_role("一色奏", 6))
+
+		if unique_pitch_count == 7:
+			roles.append(make_score_role("七音奏", 5))
+
+		var ascending_cycle := true
+		var descending_cycle := true
+		for i in range(7):
+			if (pitches[i + 1] - pitches[i] + 7) % 7 != 1:
+				ascending_cycle = false
+			if (pitches[i] - pitches[i + 1] + 7) % 7 != 1:
+				descending_cycle = false
+		if unique_pitch_count == 7 and (ascending_cycle or descending_cycle):
+			roles.append(make_score_role("七巡奏", 6))
+
+		var performer_counts: Dictionary = {}
+		for mark_index in range(marks.size()):
+			# actor情報は別配列にないため、三人参加の厳密な回数はdetect_score_combo側ではなく
+			# performer_countと音数で近似する。
+			pass
+		if performer_count >= 3 and unique_pitch_count <= 3:
+			roles.append(make_score_role("三柱合奏", 3))
+
+	# 月を跨いで奏譜を保持したこと自体にも役を与える。
+	if phase_set.size() >= 4:
+		roles.append(make_score_role("巡月奏", 4))
+	elif phase_set.size() >= 3:
+		roles.append(make_score_role("渡月奏", 3))
+
+	if resonance_count >= 8:
+		roles.append(make_score_role("八響奏", 7))
+	elif resonance_count >= 6:
+		roles.append(make_score_role("月綴奏", 3))
+
+	return roles
+
+
+func make_score_role(role_name: String, value: int) -> Dictionary:
+	return {
+		"name": role_name,
+		"value": value
+	}
+
+
+func sort_score_roles_desc(a: Dictionary, b: Dictionary) -> bool:
+	var value_a := int(a.get("value", 0))
+	var value_b := int(b.get("value", 0))
+	if value_a == value_b:
+		return str(a.get("name", "")) < str(b.get("name", ""))
+	return value_a > value_b
+
+
+func get_score_rank(score_value: int) -> String:
+	if score_value >= 10:
+		return "極奏"
+	if score_value >= 7:
+		return "大奏"
+	if score_value >= 3:
+		return "中奏"
+	return "小奏"
 
 
 func detect_melody_shape(
@@ -5502,51 +6736,20 @@ func detect_melody_shape(
 	performer_count: int,
 	unique_pitch_count: int
 ) -> String:
-	var pitches: Array[int] = []
-	var pitch_marks: Array[String] = []
+	# 旧UI互換用。実際の確定判定はdetect_score_comboで多重役を見る。
+	var performers: Dictionary = {}
+	for i in range(performer_count):
+		performers["演者%d" % i] = true
+	var uniques: Dictionary = {}
 	for mark in marks:
-		var value := get_note_value(mark)
-		if value >= 0:
-			pitches.append(value)
-			pitch_marks.append(mark)
+		if get_note_value(mark) >= 0:
+			uniques[mark] = true
+	var roles := detect_score_roles(marks, performers, uniques, {}, 0)
+	roles.sort_custom(sort_score_roles_desc)
+	if roles.is_empty():
+		return "余韻"
+	return str((roles[0] as Dictionary).get("name", "余韻"))
 
-	var rest_count := marks.count("休")
-	if rest_count >= 2 and pitches.size() >= 3:
-		return "静奏"
-
-	var return_patterns := 0
-	for i in range(maxi(0, pitch_marks.size() - 2)):
-		if pitch_marks[i] == pitch_marks[i + 2] and pitch_marks[i] != pitch_marks[i + 1]:
-			return_patterns += 1
-	if return_patterns >= 2:
-		return "返奏"
-
-	var max_same := 0
-	for pitch in NOTE_ORDER:
-		max_same = maxi(max_same, pitch_marks.count(pitch))
-	if max_same >= 4:
-		return "濁奏"
-	if max_same >= 3:
-		return "重奏"
-
-	# 八拍では完全な単調増減ではなく、旋律全体の「向き」を見る。
-	var trend := 0
-	for i in range(maxi(0, pitches.size() - 1)):
-		if pitches[i + 1] > pitches[i]:
-			trend += 1
-		elif pitches[i + 1] < pitches[i]:
-			trend -= 1
-
-	if pitches.size() >= 5 and trend >= 3:
-		return "昇奏"
-	if pitches.size() >= 5 and trend <= -3:
-		return "降奏"
-
-	if unique_pitch_count >= 6:
-		return "彩奏"
-	if performer_count >= 3 and unique_pitch_count >= 4:
-		return "合奏"
-	return "余韻"
 
 func get_lunar_combo_name(phase_index: int, _base_name: String) -> String:
 	match phase_index:
@@ -5561,8 +6764,36 @@ func get_lunar_combo_name(phase_index: int, _base_name: String) -> String:
 		_: return "月奏"
 
 
-func apply_score_combo_effect(combo_name: String, is_moon_combo: bool) -> void:
-	match combo_name:
+func apply_score_combo_effect(combo: Dictionary) -> void:
+	var combo_name := str(combo.get("name", "余韻"))
+	var is_moon_combo := bool(combo.get("moon_combo", false))
+	var score_value := int(combo.get("score_value", 0))
+
+	for role_variant in combo.get("roles", []):
+		var role: Dictionary = role_variant
+		apply_single_score_role_effect(str(role.get("name", "")))
+
+	# 月奏は基本役に「上乗せ」される。役を消さず、麻雀の複合役のように重ねる。
+	if is_moon_combo:
+		apply_lunar_score_effect(combo_name)
+		append_log("[color=#e2c97e]月と旋律が共鳴――月奏成立。基本役の上へ月奏が重なった。[/color]")
+
+	# 奏価が高いほど、役の個別効果とは別に全体ボーナスが伸びる。
+	if score_value >= 3:
+		restore_party_resources(1, 4)
+	if score_value >= 7:
+		combo_damage_rounds = maxi(combo_damage_rounds, 2)
+		combo_break_rounds = maxi(combo_break_rounds, 2)
+		restore_party_resources(1, 8)
+	if score_value >= 10:
+		combo_damage_rounds = maxi(combo_damage_rounds, 3)
+		combo_break_rounds = maxi(combo_break_rounds, 3)
+		restore_party_stance_and_hp(14, 0.03)
+		append_log("[color=#f0cf78][b]極奏[/b]：幾つもの役が噛み合い、戦場の流れを奪った。[/color]")
+
+
+func apply_single_score_role_effect(role_name: String) -> void:
+	match role_name:
 		"昇奏":
 			combo_damage_rounds = maxi(combo_damage_rounds, 2)
 			combo_break_rounds = maxi(combo_break_rounds, 2)
@@ -5583,12 +6814,77 @@ func apply_score_combo_effect(combo_name: String, is_moon_combo: bool) -> void:
 				if int(party_state[char_name]["cur_hp"]) > 0:
 					add_player_status(char_name, "ward", 1)
 			restore_party_stance_and_hp(8, 0.0)
-		"静奏":
-			restore_party_stance_and_hp(20, 0.04)
 		"彩奏":
 			restore_party_resources(2, 12)
 		"合奏":
 			restore_party_resources(1, 8)
+		"双極奏":
+			combo_damage_rounds = maxi(combo_damage_rounds, 2)
+			combo_break_rounds = maxi(combo_break_rounds, 2)
+		"対々奏":
+			restore_party_resources(1, 18)
+		"四対奏":
+			restore_party_resources(2, 22)
+			for char_name in party:
+				if int(party_state[char_name]["cur_hp"]) > 0:
+					add_player_status(char_name, "ward", 1)
+		"三三二奏":
+			combo_damage_rounds = maxi(combo_damage_rounds, 2)
+			combo_break_rounds = maxi(combo_break_rounds, 2)
+			restore_party_resources(1, 8)
+		"鏡奏":
+			for char_name in party:
+				if int(party_state[char_name]["cur_hp"]) > 0:
+					add_player_status(char_name, "ward", 2)
+			restore_party_stance_and_hp(18, 0.02)
+		"反復奏":
+			combo_damage_rounds = maxi(combo_damage_rounds, 3)
+			restore_party_resources(1, 8)
+		"双柱奏":
+			combo_break_rounds = maxi(combo_break_rounds, 3)
+			combo_damage_rounds = maxi(combo_damage_rounds, 2)
+		"二重輪奏":
+			pull_party_timeline(8.0)
+			restore_party_resources(1, 10)
+		"三環奏":
+			pull_party_timeline(5.0)
+			restore_party_resources(2, 12)
+		"一色奏":
+			combo_damage_rounds = maxi(combo_damage_rounds, 4)
+			combo_break_rounds = maxi(combo_break_rounds, 4)
+			append_log("[color=#f1ca70][b]一色奏[/b]：一つの響きが八拍を支配した。[/color]")
+		"七音奏":
+			restore_party_resources(3, 24)
+			restore_party_stance_and_hp(10, 0.04)
+		"七巡奏":
+			combo_damage_rounds = maxi(combo_damage_rounds, 4)
+			combo_break_rounds = maxi(combo_break_rounds, 4)
+			if int(enemy_state.get("broken_rounds", 0)) <= 0:
+				enemy_state["cur_break"] = maxi(
+					0,
+					int(enemy_state["cur_break"]) - int(round(float(enemy_state["break_max"]) * 0.18))
+				)
+			append_log("[color=#f3d58a][b]七巡奏[/b]：七音が一巡し、敵の構えを直接削る。[/color]")
+		"三柱合奏":
+			restore_party_resources(2, 16)
+		"渡月奏":
+			restore_party_stance_and_hp(12, 0.03)
+			append_log("渡月奏：防御と待機で月を跨いだ旋律が味方を整える。")
+		"巡月奏":
+			restore_party_stance_and_hp(20, 0.05)
+			restore_party_resources(1, 8)
+		"月綴奏":
+			restore_party_resources(2, 10)
+			combo_damage_rounds = maxi(combo_damage_rounds, 2)
+		"八響奏":
+			restore_party_resources(3, 24)
+			combo_damage_rounds = maxi(combo_damage_rounds, 4)
+			combo_break_rounds = maxi(combo_break_rounds, 4)
+			append_log("[color=#ffe59a][b]八響奏[/b]：八拍すべてが月と響き、奏力と戦場強化が極限まで高まった。[/color]")
+
+
+func apply_lunar_score_effect(combo_name: String) -> void:
+	match combo_name:
 		"朔月・静奏":
 			restore_party_resources(2, 16)
 		"三日月・疾奏":
@@ -5617,9 +6913,6 @@ func apply_score_combo_effect(combo_name: String, is_moon_combo: bool) -> void:
 				var extra := maxi(1, int(round(float(enemy_state["hp"]) * 0.020 * float(debuffs))))
 				enemy_state["cur_hp"] = maxi(0, int(enemy_state["cur_hp"]) - extra)
 				spawn_enemy_damage_popup(extra, false)
-
-	if is_moon_combo:
-		append_log("[color=#e2c97e]月と旋律が共鳴――月奏成立。月奏印が灯る。[/color]")
 
 
 func restore_party_resources(mana_amount: int, stance_amount: int) -> void:
@@ -5658,21 +6951,21 @@ func trigger_enemy_dot_echo(multiplier: float) -> void:
 func get_moon_effect_text() -> String:
 	match moon_index:
 		0:
-			return "新月：自然奏力回復 +2 / 到達時、生存者の奏力 +1"
+			return "新月：奏力回復+2 / 到達時+1　⚠ 与ダメ-8%"
 		1:
-			return "三日月：速さ +15% / 通常攻撃の奏力回復 +1"
+			return "三日月：速さ+15% / 通常攻撃奏力+1　⚠ 被ダメ+8%"
 		2:
-			return "上弦：崩し +35% / この月で崩壊させると硬直延長"
+			return "上弦：崩し+35% / 崩壊延長　⚠ 敵の構え削り+20%"
 		3:
-			return "十三夜：与ダメージ +12% / 満月への仕込み"
+			return "十三夜：与ダメ+12%　⚠ 被ダメ+8%"
 		4:
-			return "満月：味方与ダメ +25% / 敵火力 +25% / 崩壊追撃強化"
+			return "満月：味方与ダメ+25% / 崩壊追撃　⚠ 敵火力+30%"
 		5:
-			return "十六夜：毒・火傷 +50% / 敵への状態異常 +1巡"
+			return "十六夜：敵への毒・火傷+50%　⚠ 味方の毒・火傷も+50%"
 		6:
-			return "下弦：回復 +30% / 防御時の被害を32%まで軽減"
+			return "下弦：回復+30% / 防御強化　⚠ 与ダメ-10%"
 		7:
-			return "晦：弱体中の敵への与ダメ +15% / 次の新月へ"
+			return "晦：弱体敵へ+15%　⚠ 自然奏力回復-1"
 		_:
 			return "月光：特殊補正なし"
 
@@ -5695,7 +6988,18 @@ func get_effective_skill_cost(char_name: String, skill_data: Dictionary) -> int:
 	var base_cost := int(skill_data["cost"])
 	if str(state.get("last_skill_id", "")) == str(skill_data["id"]):
 		base_cost += mini(2, maxi(1, int(state.get("repeat_count", 0))))
-	return base_cost
+
+	# 固有パッシブ
+	if char_name == "仙人":
+		var note := get_skill_note_type(str(skill_data.get("id", "")))
+		if is_note_resonant(note, moon_index):
+			base_cost -= 1
+	elif char_name == "神楽師" and beat >= 6:
+		base_cost -= 1
+	elif char_name == "陰陽師" and str(skill_data.get("id", "")) in ["onmyoji_yin_turn", "onmyoji_yang_turn", "onmyoji_score_talisman"]:
+		base_cost -= 1
+
+	return maxi(1, base_cost)
 
 
 func get_skill_stance_cost(char_name: String, skill_data: Dictionary) -> int:
@@ -5713,53 +7017,87 @@ func get_skill_note_type(skill_id: String) -> String:
 		"samurai_red_mist": return "ラ"
 		"samurai_swallow_break": return "レ"
 		"samurai_aftermoon": return "ファ"
+		"samurai_moon_chaser": return "ミ"
 		"sennin_thunder": return "ソ"
 		"sennin_moon_turn": return "シ"
 		"sennin_spring": return "ファ"
 		"sennin_wind_read": return "ド"
 		"sennin_moon_hold": return "ラ"
+		"sennin_moon_borrow": return get_moon_resonant_note(moon_index)
 		"kasa_pierce": return "レ"
 		"kasa_counter": return "ファ"
 		"kasa_ward": return "ド"
 		"kasa_rain_armor": return "ド"
 		"kasa_thunder_guard": return "ミ"
+		"kasa_ukemi_shigure": return "ファ"
 		"miko_heal": return "ソ"
 		"miko_cleanse": return "ファ"
 		"miko_bless": return "シ"
 		"miko_bell_guard": return "レ"
 		"miko_divine_descent": return "ド"
+		"miko_bell_barrier": return "ファ"
 		"chochin_foxfire": return "ラ"
 		"chochin_lantern_drop": return "ミ"
 		"chochin_dim": return "レ"
 		"chochin_ember_step": return "ソ"
 		"chochin_burst": return "シ"
+		"chochin_wick_feast": return "ミ"
 		"jusoshi_poison": return "ラ"
 		"jusoshi_bind": return "レ"
 		"jusoshi_grudge": return "シ"
 		"jusoshi_extend": return "ファ"
 		"jusoshi_abyss_mark": return "ミ"
+		"jusoshi_curse_return": return "シ"
 		"kunoichi_shadow_bind": return "レ"
 		"kunoichi_poison_star": return "ラ"
 		"kunoichi_mist_step": return "ド"
 		"kunoichi_ninja_return": return "ファ"
 		"kunoichi_scatter_star": return "ソ"
+		"kunoichi_shadow_cross": return "ド"
 		"shuten_oni_smash": return "ミ"
 		"shuten_sake_flame": return "ラ"
 		"shuten_drink_dry": return "ファ"
 		"shuten_drunk_barrage": return "ソ"
 		"shuten_hyakki_feast": return "ド"
+		"shuten_oni_drink": return "ラ"
 		"kagurashi_rhythm_dance": return "ド"
 		"kagurashi_double_beat": return "ミ"
 		"kagurashi_repose": return "ファ"
 		"kagurashi_moon_call": return "シ"
 		"kagurashi_wild_kagura": return "ソ"
+		"kagurashi_beat_return": return "ミ"
 		"nekomata_cat_fire": return "ラ"
 		"nekomata_twin_tail": return "レ"
 		"nekomata_feint": return "ド"
 		"nekomata_soul_lick": return "ファ"
 		"nekomata_bakeneko_dance": return "シ"
+		"nekomata_soul_copy": return "ファ"
+		"yukionna_ice_needle": return "ミ"
+		"yukionna_white_breath": return "レ"
+		"yukionna_snow_veil": return "ファ"
+		"yukionna_frozen_feet": return "ラ"
+		"yukionna_setsugekka": return "シ"
+		"yukionna_ice_mirror": return "ド"
+		"hakamori_grave_strike": return "レ"
+		"hakamori_gravemark": return "ラ"
+		"hakamori_burial": return "ミ"
+		"hakamori_guardian": return "ド"
+		"hakamori_requiem": return "ファ"
+		"hakamori_return": return "ソ"
+		"onmyoji_white_shikigami": return "ソ"
+		"onmyoji_black_shikigami": return "ラ"
+		"onmyoji_yin_turn": return "レ"
+		"onmyoji_yang_turn": return "シ"
+		"onmyoji_barrier": return "ファ"
+		"onmyoji_score_talisman": return get_moon_resonant_note(moon_index)
 		_:
 			return "ド"
+
+
+func get_moon_resonant_note(phase_index: int) -> String:
+	# 月借り用。現在の月相に必ず共鳴する音紋を返す。
+	var notes := get_phase_resonant_notes(phase_index)
+	return notes[0] if not notes.is_empty() else "ド"
 
 
 func get_basic_attack_note(char_name: String) -> String:
@@ -5774,6 +7112,9 @@ func get_basic_attack_note(char_name: String) -> String:
 		"酒呑童子": return "ミ"
 		"神楽師": return "シ"
 		"猫又": return "ソ"
+		"雪女": return "ミ"
+		"墓守": return "レ"
+		"陰陽師": return "シ"
 		_: return "ド"
 
 
@@ -5782,7 +7123,7 @@ func get_action_note_type(action_data: Dictionary) -> String:
 	if action_type == "attack":
 		return get_basic_attack_note(str(action_data.get("actor", ""))) if action_data.has("actor") else "ド"
 	if action_type == "guard":
-		return "休"
+		return ""
 	if action_type == "ultimate":
 		return "月"
 	if action_type == "skill":
@@ -5822,7 +7163,7 @@ func get_note_color(note_type: String, planned: bool = false) -> Color:
 		"ソ": color = Color("#e0a96b")
 		"ラ": color = Color("#bd84c8")
 		"シ": color = Color("#d6a1b2")
-		"休": color = Color("#7f94aa")
+		"封": color = Color("#9a647f")
 		"月": color = COL_GOLD_BRIGHT
 	if planned:
 		color.a = 0.54
@@ -5862,7 +7203,7 @@ func get_note_display(note_type: String) -> String:
 		"ソ": return "〔伍〕"
 		"ラ": return "〔陸〕"
 		"シ": return "〔漆〕"
-		"休": return "〔休〕"
+		"封": return "〔封〕"
 		"月": return "〔月〕"
 		_: return "〔・〕"
 
@@ -5876,7 +7217,7 @@ func get_note_plain_name(note_type: String) -> String:
 		"ソ": return "伍ノ音"
 		"ラ": return "陸ノ音"
 		"シ": return "漆ノ音"
-		"休": return "休符"
+		"封": return "封拍"
 		"月": return "月音"
 		_: return "無音"
 
@@ -5966,6 +7307,9 @@ func get_ultimate_requirement(char_name: String) -> String:
 		"酒呑童子": return "濁奏"
 		"神楽師": return "合奏"
 		"猫又": return "晦・葬奏"
+		"雪女": return "静奏"
+		"墓守": return "下弦・守奏"
+		"陰陽師": return "巡月奏"
 		_: return ""
 
 
@@ -5973,20 +7317,25 @@ func is_ultimate_ready(char_name: String) -> bool:
 	return bool(ultimate_ready.get(char_name, false))
 
 
-func unlock_finishers_from_score(score_name: String) -> Array[String]:
+func unlock_finishers_from_combo(combo: Dictionary) -> Array[String]:
 	var unlocked: Array[String] = []
+	var score_name := str(combo.get("name", ""))
+	var role_names: Array[String] = []
+	for role_variant in combo.get("roles", []):
+		var role: Dictionary = role_variant
+		role_names.append(str(role.get("name", "")))
 
+	# 必殺は「そのキャラ固有の指定奏譜」を完成した時だけ解放する。
+	# 奏価や奏格が高いだけでは他キャラの必殺へ波及しない。
 	for char_name in party:
 		if is_ultimate_ready(char_name):
 			continue
-		if get_ultimate_requirement(char_name) != score_name:
-			continue
-
-		ultimate_ready[char_name] = true
-		unlocked.append(char_name)
+		var requirement := get_ultimate_requirement(char_name)
+		if requirement == score_name or role_names.has(requirement):
+			ultimate_ready[char_name] = true
+			unlocked.append(char_name)
 
 	return unlocked
-
 
 func get_party_finisher_status_text() -> String:
 	var parts: Array[String] = []
@@ -6032,6 +7381,12 @@ func get_ultimate_tactical_multiplier(char_name: String) -> float:
 		multiplier += 0.20
 	elif char_name == "猫又" and (moon_index == 5 or moon_index == 7):
 		multiplier += 0.20
+	elif char_name == "雪女" and (moon_index == 0 or moon_index == 6):
+		multiplier += 0.20
+	elif char_name == "墓守" and (moon_index == 2 or moon_index == 6):
+		multiplier += 0.20
+	elif char_name == "陰陽師" and (moon_index == 0 or moon_index == 7):
+		multiplier += 0.20
 	return multiplier
 
 
@@ -6039,22 +7394,37 @@ func get_skill_target_focus(skill_id: String) -> String:
 	if skill_id in [
 		"sennin_moon_turn",
 		"sennin_spring",
+		"sennin_moon_borrow",
 		"sennin_wind_read",
 		"kasa_counter",
 		"kasa_ward",
 		"kasa_rain_armor",
+		"kasa_ukemi_shigure",
 		"miko_heal",
 		"miko_cleanse",
 		"miko_bless",
 		"miko_bell_guard",
 		"miko_divine_descent",
+		"miko_bell_barrier",
 		"kunoichi_ninja_return",
+		"kunoichi_shadow_cross",
 		"shuten_drink_dry",
 		"shuten_hyakki_feast",
+		"shuten_oni_drink",
 		"kagurashi_rhythm_dance",
 		"kagurashi_double_beat",
 		"kagurashi_repose",
-		"kagurashi_moon_call"
+		"kagurashi_moon_call",
+		"kagurashi_beat_return",
+		"yukionna_snow_veil",
+		"yukionna_ice_mirror",
+		"hakamori_guardian",
+		"hakamori_requiem",
+		"hakamori_return",
+		"onmyoji_yin_turn",
+		"onmyoji_yang_turn",
+		"onmyoji_barrier",
+		"onmyoji_score_talisman"
 	]:
 		return "party"
 	return "enemy"
@@ -6079,6 +7449,9 @@ func get_ultimate_name(char_name: String) -> String:
 		"酒呑童子": return "鬼宴・月呑"
 		"神楽師": return "八百万神楽"
 		"猫又": return "双月猫又火"
+		"雪女": return "永夜雪華"
+		"墓守": return "千墓鎮魂"
+		"陰陽師": return "泰山府君祭"
 		_: return "必殺技"
 
 
@@ -6157,6 +7530,25 @@ func perform_ultimate_action(char_name: String) -> void:
 			var damage := int(round(float(calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), power)) * tactical_bonus))
 			deal_damage_to_enemy(damage, calculate_break_damage(int(party_state[char_name]["break"]), 1.45))
 			add_enemy_status("burn", adjusted_enemy_status_turns(4))
+		"雪女":
+			var damage := int(round(float(calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 2.80)) * tactical_bonus))
+			deal_damage_to_enemy(damage, calculate_break_damage(int(party_state[char_name]["break"]), 1.50))
+			add_enemy_status("atk_down", adjusted_enemy_status_turns(3))
+			if ctb_times.has(CTB_ENEMY_KEY):
+				ctb_times[CTB_ENEMY_KEY] = float(ctb_times[CTB_ENEMY_KEY]) + 28.0
+		"墓守":
+			var damage := int(round(float(calculate_damage(get_player_stat(char_name, "atk"), get_enemy_stat("def"), 2.30)) * tactical_bonus))
+			deal_damage_to_enemy(damage, calculate_break_damage(get_player_stat(char_name, "break"), 3.30))
+			for ally_name in party:
+				if int(party_state[ally_name]["cur_hp"]) > 0:
+					recover_player_stance(ally_name, 22)
+					add_player_status(ally_name, "ward", 1)
+		"陰陽師":
+			var damage := int(round(float(calculate_damage(get_player_stat(char_name, "mag"), get_enemy_stat("res"), 2.15)) * tactical_bonus))
+			deal_damage_to_enemy(damage, calculate_break_damage(int(party_state[char_name]["break"]), 1.15))
+			add_enemy_status("atk_down", adjusted_enemy_status_turns(3))
+			add_enemy_status("def_down", adjusted_enemy_status_turns(3))
+			set_next_round_moon(0)
 
 	apply_player_stance_damage(char_name, 28, "必殺技の反動")
 	append_log("[color=#f0d486][b]%s「%s」[/b]　戦術倍率 ×%.2f[/color]" % [char_name, ultimate_name, tactical_bonus])
@@ -6303,6 +7695,29 @@ func play_lunar_ultimate_motion(char_name: String) -> void:
 			play_pixel_vfx("Slashes/Triple Claw", enemy_center, 10.0, 22.0, Color("#d2fff9"))
 			spawn_impact_glyph("妖", enemy_center, Color("#c9fff5"), 255)
 
+		"雪女":
+			play_pixel_vfx("Magic/Aurora", enemy_center, 10.0, 18.0, Color("#b9eaff"))
+			play_pixel_vfx("Magic/Water Splash", enemy_center, 7.0, 18.0, Color("#d8f4ff"))
+			for radius in [120.0, 200.0, 300.0, 410.0]:
+				spawn_ring(enemy_center, Color("#bde9f5aa"), radius)
+			spawn_particle_burst(enemy_center, Color("#dff7ff"), 100, 430.0, "＊")
+			spawn_impact_glyph("雪", enemy_center, Color("#e7fbff"), 260)
+
+		"墓守":
+			play_pixel_vfx("Explosions/Shockwave", enemy_center, 10.0, 18.0, Color("#b7aa91"))
+			spawn_ink_burst(enemy_center, Color("#403a32"), 80)
+			for i in range(7):
+				spawn_vertical_impact(enemy_center + Vector2(-270.0 + float(i) * 90.0, 0), Color("#9e927d"), 410.0, 34.0)
+			spawn_impact_glyph("墓", enemy_center, Color("#d0c3a9"), 270)
+
+		"陰陽師":
+			play_pixel_vfx("Magic/Cast Circle", enemy_center, 11.0, 18.0, Color("#e6d59c"))
+			play_pixel_vfx("Magic/Summon", enemy_center, 7.0, 18.0, Color("#d9c789"))
+			spawn_moon_halo(enemy_center, Color("#e3d3a3"), 8)
+			spawn_curse_chains(enemy_center, Color("#b9a76f"), 10)
+			spawn_particle_burst(enemy_center, Color("#f1e2b4"), 92, 390.0, "符")
+			spawn_impact_glyph("陰陽", enemy_center, Color("#f0dfaa"), 190)
+
 	# 第二段：着弾
 	spawn_gpu_sparks(enemy_center, COL_GOLD_BRIGHT, 105, 470.0)
 	spawn_shader_wave(enemy_center, tone, 0.62)
@@ -6348,6 +7763,7 @@ func prepare_enemy_intent() -> void:
 		return
 
 	enemy_state["big_state"] = 1
+	play_boss_charge_drum(1)
 	var data := get_enemy_big_move_data()
 	if str(data.get("target", "")) == "single":
 		enemy_state["big_target"] = pick_random_living_ally()
@@ -6386,6 +7802,7 @@ func perform_enemy_charge() -> void:
 		enemy_moon_shift(1)
 
 	enemy_state["big_state"] = 2
+	play_boss_charge_drum(2)
 	enemy_state["big_charged_round"] = round_number
 	await get_tree().create_timer(0.25).timeout
 
@@ -6408,7 +7825,7 @@ func perform_enemy_ultimate() -> void:
 			await enemy_two_target_attack(str(data["name"]), 1.10 if second else 1.02, "magic", "seal", 34 if second else 30)
 		"dark_tengu":
 			push_party_timeline(28.0 if second else 18.0)
-			await enemy_party_attack(str(data["name"]), 0.94 if second else 0.82, "physical", "", 58 if second else 50)
+			await enemy_party_attack(str(data["name"]), 0.86 if second else 0.76, "physical", "", 54 if second else 46)
 		_:
 			var power := 1.28 if moon_index == 4 else 0.92
 			if second:
@@ -6493,29 +7910,140 @@ func get_enemy_intent_text() -> String:
 
 	return "‼ 発動待機　" + str(data["name"]) + target_text
 
+func get_battle_result_text() -> String:
+	var last_score := battle_last_completed_score if battle_last_completed_score != "" else "未成立"
+	var best_score := battle_best_score_name if battle_best_score_name != "" else "未成立"
+	return (
+		"最後の奏譜　%s\n"
+		+ "最高奏譜　%s　／　奏価 %d\n"
+		+ "最大崩し　%d\n"
+		+ "受けた被害　%d\n"
+		+ "成立奏譜　%d回\n"
+		+ "経過　%d巡"
+	) % [
+		last_score,
+		best_score,
+		battle_best_score_value,
+		battle_max_break_damage,
+		battle_damage_taken,
+		battle_score_count,
+		round_number
+	]
+
+
+func show_boss_defeat_sequence() -> void:
+	if screen_mode != "battle":
+		return
+
+	# 最後の一撃の余韻を一度完全に止めてから、墨・割れ・終幕へ繋ぐ。
+	hit_stop_serial += 1
+	var token := hit_stop_serial
+	Engine.time_scale = 0.045
+	var stop_timer := get_tree().create_timer(0.18, true, false, true)
+	stop_timer.timeout.connect(end_hit_stop.bind(token))
+	await get_tree().create_timer(0.20, true, false, true).timeout
+
+	duck_battle_bgm(-42.0, 1.85)
+	play_generated_break_sound()
+	play_generated_sweep(78.0, 38.0, 0.62, 0.20)
+
+	var overlay := Control.new()
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	effect_layer.add_child(overlay)
+
+	var shade := ColorRect.new()
+	shade.color = Color(0.002, 0.002, 0.005, 0.88)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(shade)
+
+	var viewport_size := get_viewport_rect().size
+	var enemy_center := Vector2(viewport_size.x * 0.43, viewport_size.y * 0.43)
+	spawn_ink_burst(enemy_center, Color("#1a171a"), 110)
+	spawn_gpu_sparks(enemy_center, Color("#e3d2aa"), 64, 410.0)
+	spawn_shader_wave(enemy_center, Color("#cdb98f"), 0.62)
+	spawn_fullscreen_flash(Color("#f3e8d0"), 0.26, 0.11)
+	shake_amount = maxf(shake_amount, 18.0)
+
+	# ボス名を中央に出し、斜線で断ち割る。
+	var boss_label := make_label(str(enemy_state.get("name", "")), 74, Color("#e6ddd0"))
+	apply_display_font(boss_label)
+	boss_label.set_anchors_preset(Control.PRESET_CENTER)
+	boss_label.position = Vector2(-460, -90)
+	boss_label.size = Vector2(920, 180)
+	boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	boss_label.add_theme_color_override("font_outline_color", Color("#030306"))
+	boss_label.add_theme_constant_override("outline_size", 14)
+	overlay.add_child(boss_label)
+
+	for i in range(3):
+		var slash := ColorRect.new()
+		slash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slash.color = Color("#f0dfb5")
+		slash.size = Vector2(760.0, 3.0 + float(i))
+		slash.position = Vector2(viewport_size.x * 0.5 - 380.0, viewport_size.y * 0.5 - 38.0 + float(i) * 34.0)
+		slash.rotation = deg_to_rad(-9.0 + float(i) * 8.0)
+		overlay.add_child(slash)
+
+	var t1 := create_tween()
+	boss_label.scale = Vector2(1.16, 0.86)
+	t1.tween_property(boss_label, "scale", Vector2.ONE, 0.13)
+	t1.tween_interval(0.48)
+	t1.tween_property(boss_label, "modulate:a", 0.0, 0.22)
+	await t1.finished
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 12)
+	center.add_child(v)
+
+	var night := make_label("第　%d　夜" % (enemy_index + 1), 30, Color("#b9ad97"))
+	apply_display_font(night)
+	night.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(night)
+	var end_label := make_label("終", 170, COL_GOLD_BRIGHT)
+	apply_display_font(end_label)
+	end_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	end_label.add_theme_color_override("font_outline_color", Color("#050407"))
+	end_label.add_theme_constant_override("outline_size", 18)
+	v.add_child(end_label)
+
+	spawn_moon_halo(viewport_size * 0.5, Color("#dcc895"), 8)
+	spawn_gpu_sparks(viewport_size * 0.5, COL_GOLD_BRIGHT, 74, 370.0)
+	play_generated_sweep(110.0, 660.0, 0.64, 0.12)
+
+	v.modulate.a = 0.0
+	v.scale = Vector2(1.30, 0.70)
+	var t2 := create_tween()
+	t2.tween_property(v, "modulate:a", 1.0, 0.10)
+	t2.parallel().tween_property(v, "scale", Vector2.ONE, 0.24)
+	t2.tween_interval(0.78)
+	t2.tween_property(overlay, "modulate:a", 0.0, 0.26)
+	await t2.finished
+	overlay.queue_free()
+
+
 func show_battle_victory() -> void:
 	busy = true
 	refresh_battle_ui()
 
-	append_log(
-		"[color=#e9dfca][b]%s 討伐。[/b][/color]"
-		% str(enemy_state["name"])
-	)
-
-	await get_tree().create_timer(0.45).timeout
+	append_log("[color=#e9dfca][b]%s 討伐。[/b][/color]" % str(enemy_state["name"]))
+	await show_boss_defeat_sequence()
 
 	if enemy_index >= ENEMIES.size() - 1:
 		show_game_clear()
 		return
 
 	show_result_overlay(
-		"夜を越えた",
-		"%sを討伐。\n生命・奏力・状態異常は次の戦闘でリセット。\n月相だけは巡り続ける。"
-		% str(enemy_state["name"]),
+		"第%d夜　終" % (enemy_index + 1),
+		"%s　討\n\n%s" % [str(enemy_state["name"]), get_battle_result_text()],
 		"次の夜へ",
 		advance_to_next_enemy
 	)
-
 
 func advance_to_next_enemy() -> void:
 	remove_battle_overlay()
@@ -6523,6 +8051,7 @@ func advance_to_next_enemy() -> void:
 	enemy_index += 1
 	round_number = 1
 	round_moon_bonus = 0
+	round_moon_override = -1
 
 	prepare_party_for_battle()
 	prepare_enemy(enemy_index)
@@ -6559,17 +8088,19 @@ func show_game_clear() -> void:
 		title_player.play()
 
 	show_result_overlay(
-		"五夜踏破",
-		"月蝕ノ御前を討伐。\n"
-		+ "総巡数 %d　／　第%d奏譜まで到達。\n"
-		+ "五 夜 踏 破"
-		% [total_rounds + round_number, measure],
+		"月奏　終幕",
+		"第一夜　月喰らいの鬼　　討\n"
+		+ "第二夜　狐火蜘蛛　　　　討\n"
+		+ "第三夜　骨笛法師　　　　討\n"
+		+ "第四夜　常闇天狗　　　　討\n"
+		+ "第五夜　月蝕ノ御前　　　討\n\n"
+		+ get_battle_result_text()
+		+ "\n\n総巡数 %d　／　第%d奏譜まで到達。" % [total_rounds + round_number, measure],
 		"もう一度編成する",
 		retry_from_selection,
 		"タイトルへ",
 		show_title_screen
 	)
-
 
 func show_result_overlay(
 	title_text: String,
@@ -6699,7 +8230,7 @@ func get_action_display(
 	if action_type == "attack":
 		return "予定：%s 攻撃" % get_note_display(get_basic_attack_note(char_name))
 	elif action_type == "guard":
-		return "予定：𝄽 防御"
+		return "予定：防御（奏譜保持）"
 	elif action_type == "ultimate":
 		return "予定：必殺技"
 	elif action_type == "skill":
@@ -7018,6 +8549,109 @@ func add_enemy_break_cracks() -> void:
 		enemy_state_fx_layer.add_child(line)
 
 
+func add_enemy_big_charge_fx(big_state: int) -> void:
+	if enemy_state_fx_layer == null or not is_instance_valid(enemy_state_fx_layer):
+		return
+	if enemy_portrait_frame == null or not is_instance_valid(enemy_portrait_frame):
+		return
+	if big_state <= 0:
+		return
+
+	var size := enemy_portrait_frame.size
+	var center := size * 0.5
+	var tone := Color("#d9a15f") if big_state == 1 else Color("#e85a64")
+	var dark_tone := Color("#5f351e") if big_state == 1 else Color("#661f2b")
+
+	# ボス画像の周囲に常駐する詠唱陣。発動待機では赤く・速くなる。
+	for ring_index in range(2):
+		var ring := Line2D.new()
+		ring.position = center
+		ring.width = 2.4 if ring_index == 0 else 1.4
+		ring.default_color = Color(tone, 0.78 if ring_index == 0 else 0.42)
+		ring.antialiased = true
+		ring.closed = true
+		var radius := 104.0 + float(ring_index) * 31.0
+		var points := PackedVector2Array()
+		for point_index in range(49):
+			var angle := TAU * float(point_index) / 48.0
+			var wobble := 1.0 + sin(angle * 6.0 + float(ring_index)) * 0.035
+			points.append(Vector2(cos(angle), sin(angle)) * radius * wobble)
+		ring.points = points
+		enemy_state_fx_layer.add_child(ring)
+
+		var direction := 1.0 if ring_index == 0 else -1.0
+		var turn_time := (3.4 if big_state == 1 else 1.85) + float(ring_index) * 0.4
+		var ring_tween := create_tween().set_loops()
+		ring_tween.tween_property(ring, "rotation", TAU * direction, turn_time).from(0.0)
+
+		var pulse_tween := create_tween().set_loops()
+		pulse_tween.tween_property(ring, "scale", Vector2(1.055, 1.055), 0.46 if big_state == 1 else 0.24)
+		pulse_tween.tween_property(ring, "scale", Vector2(0.96, 0.96), 0.46 if big_state == 1 else 0.24)
+
+	var aura := ColorRect.new()
+	aura.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	aura.color = Color(dark_tone, 0.12 if big_state == 1 else 0.20)
+	aura.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	enemy_state_fx_layer.add_child(aura)
+	aura.move_to_front()
+
+	var aura_tween := create_tween().set_loops()
+	aura_tween.tween_property(aura, "modulate:a", 0.35, 0.55 if big_state == 1 else 0.28)
+	aura_tween.tween_property(aura, "modulate:a", 0.90, 0.55 if big_state == 1 else 0.28)
+
+	add_enemy_persistent_particles(
+		Color(tone, 0.78),
+		38 if big_state == 1 else 62,
+		120.0 if big_state == 1 else 175.0,
+		205.0,
+		0.92
+	)
+
+	# 画像右上に大技名を固定。CTBやログを読まなくても危険が分かる。
+	var data := get_enemy_big_move_data()
+	var warning_panel := make_panel(
+		Color("#120c0bea") if big_state == 1 else Color("#1b090def"),
+		Color(tone, 0.78),
+		8,
+		2
+	)
+	warning_panel.position = Vector2(maxf(8.0, size.x - 246.0), 12.0)
+	warning_panel.size = Vector2(232.0, 74.0)
+	warning_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	enemy_state_fx_layer.add_child(warning_panel)
+	warning_panel.move_to_front()
+
+	var warning_v := VBoxContainer.new()
+	warning_v.alignment = BoxContainer.ALIGNMENT_CENTER
+	warning_v.add_theme_constant_override("separation", 1)
+	warning_panel.add_child(warning_v)
+
+	var state_text := "⚠　大技準備中" if big_state == 1 else "‼　発動待機"
+	var state_label := make_label(state_text, 14 if big_state == 1 else 16, tone)
+	apply_display_font(state_label)
+	state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	state_label.add_theme_color_override("font_outline_color", Color("#090406"))
+	state_label.add_theme_constant_override("outline_size", 6)
+	warning_v.add_child(state_label)
+
+	var move_label := make_label(str(data.get("name", "大技")), 17, Color("#f4ded4"))
+	apply_display_font(move_label)
+	move_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	move_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	move_label.add_theme_color_override("font_outline_color", Color("#090406"))
+	move_label.add_theme_constant_override("outline_size", 5)
+	warning_v.add_child(move_label)
+
+	var warning_tween := create_tween().set_loops()
+	warning_tween.tween_property(warning_panel, "modulate:a", 0.58, 0.54 if big_state == 1 else 0.26)
+	warning_tween.tween_property(warning_panel, "modulate:a", 1.0, 0.54 if big_state == 1 else 0.26)
+
+	# 状態へ入った瞬間だけPixel VFXも重ねる。以後は上の常駐陣が残る。
+	var global_center := enemy_portrait_frame.global_position + center
+	play_pixel_vfx("Magic/Cast Circle", global_center, 4.2 if big_state == 1 else 5.0, 16.0, tone)
+	play_pixel_vfx("Lightning/Charge Up", global_center, 3.6 if big_state == 1 else 4.5, 17.0, Color(tone, 0.90))
+
+
 func refresh_enemy_state_visuals() -> void:
 	if enemy_state_fx_layer == null or not is_instance_valid(enemy_state_fx_layer):
 		return
@@ -7046,6 +8680,10 @@ func refresh_enemy_state_visuals() -> void:
 		halo.color = Color(MOON_COLORS[moon_index], 0.055)
 		halo.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		enemy_state_fx_layer.add_child(halo)
+
+	var big_state := int(enemy_state.get("big_state", 0))
+	if big_state > 0:
+		add_enemy_big_charge_fx(big_state)
 
 
 func trigger_hit_stop_for_damage(damage: int) -> void:
@@ -7336,6 +8974,9 @@ func get_score_forecast_notes() -> Array[Dictionary]:
 
 		if action.is_empty():
 			continue
+		# 防御は「無音」。CTB上では行動するが、奏譜の八拍には入らない。
+		if str(action.get("type", "")) == "guard":
+			continue
 
 		planned.append({
 			"actor": char_name,
@@ -7373,7 +9014,6 @@ func sort_planned_ctb_ascending(a: Dictionary, b: Dictionary) -> bool:
 
 
 func get_combo_forecast_text(notes: Array[Dictionary]) -> String:
-	# 音紋そのものは上の八拍セルで見えるため、ここでは候補だけを短く1行表示する。
 	if notes.is_empty():
 		return "形成前　最初の音紋を選ぶ"
 
@@ -7381,10 +9021,12 @@ func get_combo_forecast_text(notes: Array[Dictionary]) -> String:
 
 	if notes.size() >= SCORE_LENGTH:
 		var combo := detect_score_combo(notes)
-		var combo_name := str(combo["name"])
-		return "【%s】%s" % [
-			combo_name,
-			"　→ 月奏" if bool(combo["moon_combo"]) else ""
+		var role_count := (combo.get("roles", []) as Array).size()
+		return "【%s】 奏格%s / 奏価%d%s" % [
+			str(combo["name"]),
+			str(combo.get("rank", "小奏")),
+			int(combo.get("score_value", 0)),
+			(" / %d役複合" % role_count) if role_count > 1 else ""
 		]
 
 	if notes.size() < 4:
@@ -7394,56 +9036,108 @@ func get_combo_forecast_text(notes: Array[Dictionary]) -> String:
 			remaining
 		]
 
-	var candidates := get_next_note_combo_candidates(notes)
-	if candidates.is_empty():
+	if notes.size() == SCORE_LENGTH - 1:
+		var candidates := get_next_note_combo_candidates(notes)
+		if not candidates.is_empty():
+			return "和了候補　%s" % "　".join(candidates)
+
+	var hints := get_partial_score_role_hints(notes)
+	if hints.is_empty():
 		return "形成中 %d / %d　／　あと%d拍" % [
 			notes.size(),
 			SCORE_LENGTH,
 			remaining
 		]
 
-	var stage := "兆し" if notes.size() <= 5 else "終止候補"
-	return "%s　%s　／　あと%d拍" % [
-		stage,
-		"　".join(candidates),
+	return "兆し　%s　／　あと%d拍" % [
+		"・".join(hints),
 		remaining
 	]
 
 
+func get_partial_score_role_hints(notes: Array[Dictionary]) -> Array[String]:
+	var marks: Array[String] = []
+	var performers: Dictionary = {}
+	var unique_pitches: Dictionary = {}
+	var phase_set: Dictionary = {}
+	var resonance_count := 0
+
+	for note_variant in notes:
+		var note: Dictionary = note_variant
+		var mark := str(note.get("mark", ""))
+		var phase := int(note.get("phase", moon_index))
+		marks.append(mark)
+		performers[str(note.get("actor", ""))] = true
+		phase_set[phase] = true
+		if get_note_value(mark) >= 0:
+			unique_pitches[mark] = true
+			if is_note_resonant(mark, phase):
+				resonance_count += 1
+
+	var roles := detect_score_roles(marks, performers, unique_pitches, phase_set, resonance_count)
+	roles.sort_custom(sort_score_roles_desc)
+
+	var results: Array[String] = []
+	for role_variant in roles:
+		var role: Dictionary = role_variant
+		var role_name := str(role.get("name", ""))
+		if role_name == "":
+			continue
+		results.append(role_name)
+		if results.size() >= 3:
+			break
+	return results
+
+
 func get_next_note_combo_candidates(notes: Array[Dictionary]) -> Array[String]:
 	var results: Array[String] = []
-	var current: Array[Dictionary] = []
-	for note_variant in notes:
-		current.append(note_variant.duplicate(true))
+	var candidate_rows: Array[Dictionary] = []
 
 	for candidate in NOTE_ORDER:
-		var simulated := current.duplicate(true)
+		var simulated: Array[Dictionary] = []
+		for note_variant in notes:
+			simulated.append((note_variant as Dictionary).duplicate(true))
 		simulated.append({
-			"actor": "候補",
+			"actor": get_current_planning_actor(),
 			"mark": candidate,
 			"phase": moon_index,
-			"action_name": "",
+			"action_name": "候補",
 			"planned": true
 		})
 
-		var marks: Array[String] = []
-		var performers: Dictionary = {}
-		var uniques: Dictionary = {}
-		for note_variant in simulated:
-			var note: Dictionary = note_variant
-			var mark := str(note.get("mark", ""))
-			marks.append(mark)
-			performers[str(note.get("actor", ""))] = true
-			if get_note_value(mark) >= 0:
-				uniques[mark] = true
+		var combo := detect_score_combo(simulated)
+		candidate_rows.append({
+			"mark": candidate,
+			"name": str(combo.get("name", "余韻")),
+			"rank": str(combo.get("rank", "小奏")),
+			"value": int(combo.get("score_value", 0))
+		})
 
-		var shape := detect_melody_shape(marks, performers.size(), uniques.size())
-		if shape != "余韻":
-			results.append("%s→%s" % [get_note_display(candidate), shape])
+	candidate_rows.sort_custom(sort_score_candidate_desc)
+
+	for row_variant in candidate_rows:
+		var row: Dictionary = row_variant
+		if int(row.get("value", 0)) <= 0:
+			continue
+		results.append("%s→%s(%s%d)" % [
+			get_note_display(str(row["mark"])),
+			str(row["name"]),
+			str(row["rank"]),
+			int(row["value"])
+		])
 		if results.size() >= 3:
 			break
 
 	return results
+
+
+func sort_score_candidate_desc(a: Dictionary, b: Dictionary) -> bool:
+	var value_a := int(a.get("value", 0))
+	var value_b := int(b.get("value", 0))
+	if value_a == value_b:
+		return str(a.get("mark", "")) < str(b.get("mark", ""))
+	return value_a > value_b
+
 
 func append_log(line: String) -> void:
 	if log_label == null:
@@ -7976,6 +9670,12 @@ func get_skill_category_text(skill_id: String) -> String:
 		return "神楽舞"
 	if skill_id.begins_with("nekomata"):
 		return "猫妖術"
+	if skill_id.begins_with("yukionna"):
+		return "氷雪術"
+	if skill_id.begins_with("hakamori"):
+		return "墓守術"
+	if skill_id.begins_with("onmyoji"):
+		return "陰陽術"
 	return "術式"
 
 
@@ -7986,51 +9686,79 @@ func get_skill_sigil(skill_id: String) -> String:
 		"samurai_red_mist": return "血"
 		"samurai_swallow_break": return "燕"
 		"samurai_aftermoon": return "残"
+		"samurai_moon_chaser": return "追"
 		"sennin_thunder": return "雷"
 		"sennin_moon_turn": return "月"
 		"sennin_spring": return "泉"
 		"sennin_wind_read": return "風"
 		"sennin_moon_hold": return "留"
+		"sennin_moon_borrow": return "借"
 		"kasa_pierce": return "穿"
 		"kasa_counter": return "返"
 		"kasa_ward": return "陣"
 		"kasa_rain_armor": return "鎧"
 		"kasa_thunder_guard": return "雷"
+		"kasa_ukemi_shigure": return "流"
 		"miko_heal": return "祓"
 		"miko_cleanse": return "禊"
 		"miko_bless": return "祝"
 		"miko_bell_guard": return "鈴"
 		"miko_divine_descent": return "神"
+		"miko_bell_barrier": return "結"
 		"chochin_foxfire": return "狐"
 		"chochin_lantern_drop": return "灯"
 		"chochin_dim": return "迷"
 		"chochin_ember_step": return "鬼"
 		"chochin_burst": return "爆"
+		"chochin_wick_feast": return "喰"
 		"jusoshi_poison": return "蝕"
 		"jusoshi_bind": return "縛"
 		"jusoshi_grudge": return "怨"
 		"jusoshi_extend": return "継"
 		"jusoshi_abyss_mark": return "奈"
+		"jusoshi_curse_return": return "還"
 		"kunoichi_shadow_bind": return "影"
 		"kunoichi_poison_star": return "毒"
 		"kunoichi_mist_step": return "霞"
 		"kunoichi_ninja_return": return "忍"
 		"kunoichi_scatter_star": return "星"
+		"kunoichi_shadow_cross": return "渡"
 		"shuten_oni_smash": return "鬼"
 		"shuten_sake_flame": return "酒"
 		"shuten_drink_dry": return "呑"
 		"shuten_drunk_barrage": return "酔"
 		"shuten_hyakki_feast": return "宴"
+		"shuten_oni_drink": return "呑"
 		"kagurashi_rhythm_dance": return "拍"
 		"kagurashi_double_beat": return "重"
 		"kagurashi_repose": return "鎮"
 		"kagurashi_moon_call": return "招"
 		"kagurashi_wild_kagura": return "荒"
+		"kagurashi_beat_return": return "返"
 		"nekomata_cat_fire": return "猫"
 		"nekomata_twin_tail": return "尾"
 		"nekomata_feint": return "騙"
 		"nekomata_soul_lick": return "魂"
 		"nekomata_bakeneko_dance": return "化"
+		"nekomata_soul_copy": return "写"
+		"yukionna_ice_needle": return "氷"
+		"yukionna_white_breath": return "息"
+		"yukionna_snow_veil": return "雪"
+		"yukionna_frozen_feet": return "凍"
+		"yukionna_setsugekka": return "華"
+		"yukionna_ice_mirror": return "鏡"
+		"hakamori_grave_strike": return "墓"
+		"hakamori_gravemark": return "標"
+		"hakamori_burial": return "葬"
+		"hakamori_guardian": return "守"
+		"hakamori_requiem": return "鎮"
+		"hakamori_return": return "返"
+		"onmyoji_white_shikigami": return "白"
+		"onmyoji_black_shikigami": return "黒"
+		"onmyoji_yin_turn": return "陰"
+		"onmyoji_yang_turn": return "陽"
+		"onmyoji_barrier": return "結"
+		"onmyoji_score_talisman": return "符"
 		_: return "技"
 
 
@@ -8055,6 +9783,12 @@ func get_skill_color(skill_id: String) -> Color:
 		return Color("#e0b7d5")
 	if skill_id.begins_with("nekomata"):
 		return Color("#7fc4bf")
+	if skill_id.begins_with("yukionna"):
+		return Color("#a9dff2")
+	if skill_id.begins_with("hakamori"):
+		return Color("#a79a83")
+	if skill_id.begins_with("onmyoji"):
+		return Color("#d8c48a")
 	return Color("#b6b8bf")
 
 
@@ -8079,6 +9813,9 @@ func spawn_cut_in_marks(parent: Control, skill_id: String, tone: Color) -> void:
 			"shuten": mark.text = "鬼"
 			"kagurashi": mark.text = "◇"
 			"nekomata": mark.text = "猫"
+			"yukionna": mark.text = "雪"
+			"hakamori": mark.text = "墓"
+			"onmyoji": mark.text = "符"
 			_: mark.text = "・"
 
 		mark.position = Vector2(
@@ -8402,7 +10139,6 @@ func spawn_barrier_dome(
 ) -> void:
 	for i in range(4):
 		var ring := Panel.new()
-		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ring.size = Vector2(radius * 2.0, radius * 1.15)
 		ring.position = center_point - ring.size * 0.5
 		ring.pivot_offset = ring.size * 0.5
@@ -8651,6 +10387,9 @@ func play_pixel_skill_accent(
 		"samurai_aftermoon":
 			play_pixel_vfx("Slashes/Slash Left", enemy_center, 5.3, 21.0, Color("#e9d8b5"))
 			play_pixel_vfx("Pickups and UI/Star Burst", enemy_center, 2.5, 19.0, Color("#e7d49f"))
+		"samurai_moon_chaser":
+			play_pixel_vfx("Slashes/Katana Draw", enemy_center, 6.0, 22.0, Color("#f5e2b8"))
+			play_pixel_vfx("Hit Sparks/Critical Star", enemy_center, 3.1, 23.0, Color("#ffe6a8"))
 
 		# 仙人
 		"sennin_thunder":
@@ -8668,6 +10407,9 @@ func play_pixel_skill_accent(
 		"sennin_moon_hold":
 			play_pixel_vfx("Magic/Cast Circle", enemy_center, 4.4, 17.0, Color("#b3d5f1"))
 			play_pixel_vfx("Lightning/Static Loop", enemy_center, 3.2, 18.0, Color("#d2e9fa"))
+		"sennin_moon_borrow":
+			play_pixel_vfx("Magic/Cast Circle", actor_center, 4.8, 17.0, Color("#d9e9ff"))
+			play_pixel_vfx("Pickups and UI/Mana Orb", actor_center, 3.0, 18.0, Color("#d5e9ff"))
 
 		# 傘使い
 		"kasa_pierce":
@@ -8685,6 +10427,9 @@ func play_pixel_skill_accent(
 		"kasa_thunder_guard":
 			play_pixel_vfx("Lightning/Storm Flash", enemy_center, 5.5, 18.0)
 			play_pixel_vfx("Magic/Shield Bubble", actor_center, 3.0, 18.0, Color("#bdddea"))
+		"kasa_ukemi_shigure":
+			play_pixel_vfx("Magic/Shield Bubble", actor_center, 3.8, 18.0, Color("#c8e8f4"))
+			play_pixel_vfx("Hit Sparks/Parry Flash", actor_center, 3.0, 23.0, Color("#e5f5ff"))
 
 		# 巫女
 		"miko_heal":
@@ -8703,6 +10448,9 @@ func play_pixel_skill_accent(
 			play_pixel_vfx("Magic/Holy Light", party_center, 6.0, 17.0, Color("#ffe9a8"))
 			play_pixel_vfx_on_party("Magic/Buff Up", 2.7, 20.0, Color("#ffe6a6"))
 			play_pixel_vfx_on_party("Magic/Shield Bubble", 2.6, 18.0, Color("#fff0c0"))
+		"miko_bell_barrier":
+			play_pixel_vfx_on_party("Magic/Shield Bubble", 3.1, 18.0, Color("#fff0bf"))
+			play_pixel_vfx_on_party("Pickups and UI/Save Sparkle", 2.3, 18.0, Color("#ffe5a7"))
 
 		# 提灯使い
 		"chochin_foxfire":
@@ -8720,6 +10468,9 @@ func play_pixel_skill_accent(
 		"chochin_burst":
 			play_pixel_vfx("Fire/Phoenix Flare", enemy_center, 6.4, 18.0)
 			play_pixel_vfx("Explosions/Big Boom", enemy_center, 4.8, 20.0, Color("#ffc07c"))
+		"chochin_wick_feast":
+			play_pixel_vfx("Fire/Fire Ring", enemy_center, 5.4, 20.0, Color("#ffb56e"))
+			play_pixel_vfx("Hit Sparks/Fire Hit", enemy_center, 2.9, 23.0, Color("#ffcf91"))
 
 		# 呪詛師
 		"jusoshi_poison":
@@ -8737,6 +10488,9 @@ func play_pixel_skill_accent(
 		"jusoshi_abyss_mark":
 			play_pixel_vfx("Magic/Dark Curse", enemy_center, 4.8, 18.0, Color("#9e66b2"))
 			play_pixel_vfx("Lightning/Shock Aura", enemy_center, 3.3, 18.0, Color("#b883c7"))
+		"jusoshi_curse_return":
+			play_pixel_vfx("Magic/Dark Curse", enemy_center, 4.8, 18.0, Color("#c59bd4"))
+			play_pixel_vfx("Explosions/Shockwave", enemy_center, 3.1, 19.0, Color("#9b6fac"))
 
 		# くノ一
 		"kunoichi_shadow_bind":
@@ -8755,6 +10509,9 @@ func play_pixel_skill_accent(
 			play_pixel_vfx("Projectiles/Shuriken", enemy_center, 5.4, 24.0)
 			play_pixel_vfx("Slashes/Double Slash", enemy_center, 5.5, 20.0)
 			play_pixel_vfx("Hit Sparks/Multi Hit", enemy_center, 2.8, 23.0)
+		"kunoichi_shadow_cross":
+			play_pixel_vfx("Magic/Teleport", actor_center, 3.5, 20.0, Color("#c3d7e5"))
+			play_pixel_vfx("Pickups and UI/Star Burst", actor_center, 2.4, 20.0, Color("#dbe9f3"))
 
 		# 酒呑童子
 		"shuten_oni_smash":
@@ -8772,6 +10529,9 @@ func play_pixel_skill_accent(
 		"shuten_hyakki_feast":
 			play_pixel_vfx_on_party("Magic/Buff Up", 2.8, 20.0, Color("#e6a27e"))
 			play_pixel_vfx("Ambient/Embers Ambient", party_center, 4.2, 16.0, Color("#e7aa83"))
+		"shuten_oni_drink":
+			play_pixel_vfx("Magic/Buff Up", actor_center, 3.6, 21.0, Color("#ef8d70"))
+			play_pixel_vfx("Explosions/Shockwave", actor_center, 3.0, 19.0, Color("#cc725f"))
 
 		# 神楽師
 		"kagurashi_rhythm_dance":
@@ -8789,6 +10549,9 @@ func play_pixel_skill_accent(
 		"kagurashi_wild_kagura":
 			play_pixel_vfx("Magic/Holy Light", enemy_center, 5.8, 18.0, Color("#e4b7d8"))
 			play_pixel_vfx("Explosions/Shockwave", enemy_center, 3.7, 19.0, Color("#d4a8cc"))
+		"kagurashi_beat_return":
+			play_pixel_vfx("Magic/Cast Circle", actor_center, 4.2, 18.0, Color("#e0c4eb"))
+			play_pixel_vfx("Pickups and UI/Save Sparkle", actor_center, 2.5, 19.0, Color("#f0d7f0"))
 
 		# 猫又
 		"nekomata_cat_fire":
@@ -8807,6 +10570,36 @@ func play_pixel_skill_accent(
 			play_pixel_vfx("Magic/Summon", enemy_center, 6.0, 18.0, Color("#8fd7cf"))
 			play_pixel_vfx("Fire/Blue Flame", enemy_center, 4.4, 19.0, Color("#9be5de"))
 			play_pixel_vfx("Slashes/Triple Claw", enemy_center, 5.2, 21.0, Color("#d1fff9"))
+		"nekomata_soul_copy":
+			play_pixel_vfx("Magic/Dark Curse", enemy_center, 4.1, 18.0, Color("#86c8c4"))
+			play_pixel_vfx("Magic/Debuff Down", enemy_center, 2.7, 20.0, Color("#91d5cd"))
+
+		# 雪女
+		"yukionna_ice_needle", "yukionna_frozen_feet", "yukionna_setsugekka":
+			play_pixel_vfx("Magic/Aurora", enemy_center, 5.0, 18.0, Color("#bcecff"))
+			play_pixel_vfx("Magic/Water Splash", enemy_center, 3.2, 20.0, Color("#ddf6ff"))
+		"yukionna_white_breath":
+			play_pixel_vfx("Magic/Wind Gust", enemy_center, 4.6, 18.0, Color("#cfeeff"))
+			play_pixel_vfx("Magic/Debuff Down", enemy_center, 2.6, 19.0, Color("#b7dce9"))
+		"yukionna_snow_veil", "yukionna_ice_mirror":
+			play_pixel_vfx_on_party("Magic/Shield Bubble", 2.8, 18.0, Color("#c9edfa"))
+
+		# 墓守
+		"hakamori_grave_strike", "hakamori_burial":
+			play_pixel_vfx("Hit Sparks/Heavy Hit", enemy_center, 5.2, 19.0, Color("#c7b99d"))
+			play_pixel_vfx("Explosions/Shockwave", enemy_center, 3.4, 18.0, Color("#9c907b"))
+		"hakamori_gravemark":
+			play_pixel_vfx("Magic/Dark Curse", enemy_center, 4.0, 18.0, Color("#9d927f"))
+		"hakamori_guardian", "hakamori_requiem", "hakamori_return":
+			play_pixel_vfx_on_party("Magic/Heal", 2.8, 18.0, Color("#cfc3ad"))
+
+		# 陰陽師
+		"onmyoji_white_shikigami", "onmyoji_black_shikigami":
+			play_pixel_vfx("Magic/Summon", enemy_center, 5.0, 18.0, Color("#e2d19a"))
+		"onmyoji_yin_turn", "onmyoji_yang_turn", "onmyoji_score_talisman":
+			play_pixel_vfx("Magic/Cast Circle", actor_center, 4.8, 18.0, Color("#dfce96"))
+		"onmyoji_barrier":
+			play_pixel_vfx_on_party("Magic/Shield Bubble", 3.0, 18.0, Color("#e2d4a7"))
 
 
 
@@ -8815,6 +10608,7 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 	var viewport_size := get_viewport_rect().size
 	var enemy_center := Vector2(viewport_size.x * 0.43, viewport_size.y * 0.43)
 	var party_center := Vector2(viewport_size.x * 0.57, viewport_size.y * 0.78)
+	var actor_center := get_party_effect_center(char_name, party_center)
 
 	play_pixel_skill_accent(skill_id, char_name, target_name, enemy_center, party_center)
 
@@ -8908,6 +10702,14 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 		# -----------------------------------------------------------
 		# 仙人
 		# -----------------------------------------------------------
+		"samurai_moon_chaser":
+			spawn_streak(enemy_center + Vector2(-360, 160), Vector2(720, -320), Color("#f7e5c4"), 8.0)
+			spawn_ink_burst(enemy_center, Color("#bca27d"), 36)
+			spawn_gpu_sparks(enemy_center, Color("#ffe2a7"), 70, 390.0)
+			spawn_impact_glyph("追", enemy_center, Color("#f5dfb2"), 178)
+			spawn_fullscreen_flash(Color("#fff0ce"), 0.24, 0.08)
+			await get_tree().create_timer(0.22).timeout
+
 		"sennin_thunder":
 			spawn_moon_halo(enemy_center, Color("#8fc7ef"), 2)
 			spawn_lightning_storm(enemy_center, 7, Color("#d9efff"))
@@ -8945,6 +10747,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 		# -----------------------------------------------------------
 		# 傘使い
 		# -----------------------------------------------------------
+		"sennin_moon_borrow":
+			spawn_moon_halo(actor_center, Color("#cce6fb"), 5)
+			spawn_ring(actor_center, Color("#d7ebff99"), 250.0)
+			spawn_particle_burst(actor_center, Color("#d9efff"), 46, 210.0, "・")
+			spawn_impact_glyph("借", actor_center, Color("#dceeff"), 154)
+			await get_tree().create_timer(0.20).timeout
+
 		"kasa_pierce":
 			spawn_rain_field(enemy_center, 760.0, 76, Color("#93bed9"))
 			await get_tree().create_timer(0.07).timeout
@@ -8994,6 +10803,12 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 		# -----------------------------------------------------------
 		# 巫女
 		# -----------------------------------------------------------
+		"kasa_ukemi_shigure":
+			spawn_barrier_dome(actor_center, Color("#c8e8f4"), 250.0)
+			spawn_rain_field(actor_center, 520.0, 40, Color("#b8dcea88"))
+			spawn_impact_glyph("流", actor_center, Color("#e0f1f8"), 152)
+			await get_tree().create_timer(0.20).timeout
+
 		"miko_heal":
 			spawn_holy_column(party_center, Color("#fff0bd"), 420.0)
 			spawn_particle_burst(party_center, Color("#f7e5aa"), 54, 230.0, "✦")
@@ -9038,6 +10853,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 		# -----------------------------------------------------------
 		# 提灯使い - 炎を明確に主役にする
 		# -----------------------------------------------------------
+		"miko_bell_barrier":
+			spawn_holy_column(party_center, Color("#fff0b7"), 410.0)
+			spawn_moon_halo(party_center, Color("#f4df9e"), 4)
+			spawn_particle_burst(party_center, Color("#fff1c5"), 54, 230.0, "・")
+			spawn_impact_glyph("結", party_center, Color("#ffe9ad"), 158)
+			await get_tree().create_timer(0.22).timeout
+
 		"chochin_foxfire":
 			for i in range(5):
 				var angle := TAU * float(i) / 5.0
@@ -9091,6 +10913,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 		# -----------------------------------------------------------
 		# 呪詛師
 		# -----------------------------------------------------------
+		"chochin_wick_feast":
+			spawn_fire_column(enemy_center, 330.0, 105.0, false)
+			spawn_ring(enemy_center, Color("#f0a05a99"), 285.0)
+			spawn_fire_particles(enemy_center, 78, 275.0, false)
+			spawn_impact_glyph("喰", enemy_center, Color("#ffbd75"), 170)
+			await get_tree().create_timer(0.22).timeout
+
 		"jusoshi_poison":
 			spawn_curse_chains(enemy_center, Color("#9b6ab1"), 6)
 			spawn_particle_burst(enemy_center, Color("#9c6aad"), 54, 260.0, "呪")
@@ -9139,6 +10968,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 			spawn_impact_glyph("奈", enemy_center, Color("#ddaee8"), 194)
 			await get_tree().create_timer(0.29).timeout
 
+		"jusoshi_curse_return":
+			spawn_curse_chains(enemy_center, Color("#a876b9"), 9)
+			spawn_shader_wave(enemy_center, Color("#b486c7"), 0.43)
+			spawn_ink_burst(enemy_center, Color("#4c3158"), 42)
+			spawn_impact_glyph("還", enemy_center, Color("#d0a5df"), 168)
+			await get_tree().create_timer(0.23).timeout
+
 		"kunoichi_shadow_bind":
 			spawn_streak(enemy_center + Vector2(-250, 0), Vector2(500, 0), Color("#b5cad8"), 3.0)
 			spawn_curse_chains(enemy_center, Color("#829aaa"), 5)
@@ -9169,6 +11005,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 			spawn_gpu_sparks(enemy_center, Color("#e8eff3"), 62, 330.0)
 			spawn_impact_glyph("星", enemy_center, Color("#e8eff3"), 150)
 			await get_tree().create_timer(0.22).timeout
+
+		"kunoichi_shadow_cross":
+			spawn_wind_arc(actor_center, Color("#c8dce8"), 7)
+			spawn_streak(actor_center + Vector2(-220, 100), Vector2(440, -190), Color("#e3eff5"), 4.0)
+			spawn_particle_burst(actor_center, Color("#cddde6"), 38, 240.0, "・")
+			spawn_impact_glyph("渡", actor_center, Color("#dce8ef"), 146)
+			await get_tree().create_timer(0.17).timeout
 
 		"shuten_oni_smash":
 			spawn_vertical_impact(enemy_center, Color("#d56c56"), 520.0, 100.0)
@@ -9204,6 +11047,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 			spawn_impact_glyph("宴", party_center, Color("#e8a47f"), 165)
 			await get_tree().create_timer(0.22).timeout
 
+		"shuten_oni_drink":
+			spawn_fire_particles(actor_center, 66, 260.0, false)
+			spawn_ring(actor_center, Color("#d97d61aa"), 270.0)
+			spawn_shader_wave(actor_center, Color("#d8896d"), 0.38)
+			spawn_impact_glyph("呑", actor_center, Color("#efa17f"), 166)
+			await get_tree().create_timer(0.20).timeout
+
 		"kagurashi_rhythm_dance":
 			spawn_wind_arc(party_center, Color("#e2bed8"), 8)
 			spawn_particle_burst(party_center, Color("#f0cfe4"), 52, 260.0, "✦")
@@ -9234,6 +11084,13 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 			spawn_gpu_sparks(enemy_center, Color("#f0c9e2"), 76, 360.0)
 			spawn_impact_glyph("荒", enemy_center, Color("#efc5df"), 174)
 			await get_tree().create_timer(0.25).timeout
+
+		"kagurashi_beat_return":
+			spawn_moon_halo(actor_center, Color("#e5c4eb"), 4)
+			spawn_ring(actor_center, Color("#e2bede99"), 255.0)
+			spawn_particle_burst(actor_center, Color("#f1d3eb"), 44, 205.0, "・")
+			spawn_impact_glyph("返", actor_center, Color("#edcee8"), 152)
+			await get_tree().create_timer(0.19).timeout
 
 		"nekomata_cat_fire":
 			spawn_fire_column(enemy_center, 300.0, 100.0, true)
@@ -9268,8 +11125,46 @@ func play_skill_motion(skill_id: String, char_name: String, target_name: String 
 			spawn_impact_glyph("化", enemy_center, Color("#b1e5df"), 180)
 			await get_tree().create_timer(0.26).timeout
 
+		"nekomata_soul_copy":
+			spawn_curse_chains(enemy_center, Color("#73a9a4"), 6)
+			spawn_shader_wave(enemy_center, Color("#86c9c2"), 0.34)
+			spawn_particle_burst(actor_center, Color("#a9e2da"), 34, 180.0, "・")
+			spawn_impact_glyph("写", enemy_center, Color("#afe7df"), 154)
+			await get_tree().create_timer(0.20).timeout
+
+		"yukionna_ice_needle", "yukionna_white_breath", "yukionna_frozen_feet", "yukionna_setsugekka":
+			spawn_wind_arc(enemy_center, Color("#bfe9f6"), 8)
+			spawn_particle_burst(enemy_center, Color("#e5f8ff"), 46, 250.0, "＊")
+			spawn_ring(enemy_center, Color("#b9e4f0aa"), 220.0)
+			await get_tree().create_timer(0.20).timeout
+		"yukionna_snow_veil", "yukionna_ice_mirror":
+			spawn_barrier_dome(party_center, Color("#c9edf8"), 230.0)
+			spawn_particle_burst(party_center, Color("#e6f8ff"), 34, 180.0, "＊")
+			await get_tree().create_timer(0.18).timeout
+
+		"hakamori_grave_strike", "hakamori_gravemark", "hakamori_burial":
+			spawn_vertical_impact(enemy_center, Color("#a69a84"), 430.0, 82.0)
+			spawn_ink_burst(enemy_center, Color("#4b463d"), 34)
+			await get_tree().create_timer(0.22).timeout
+		"hakamori_guardian", "hakamori_requiem", "hakamori_return":
+			spawn_barrier_dome(party_center, Color("#b7ad99"), 250.0)
+			spawn_particle_burst(party_center, Color("#d4c7ad"), 38, 180.0, "・")
+			await get_tree().create_timer(0.20).timeout
+
+		"onmyoji_white_shikigami", "onmyoji_black_shikigami":
+			spawn_curse_chains(enemy_center, Color("#b7a56f"), 5)
+			spawn_moon_halo(enemy_center, Color("#dac98f"), 4)
+			await get_tree().create_timer(0.20).timeout
+		"onmyoji_yin_turn", "onmyoji_yang_turn", "onmyoji_score_talisman":
+			spawn_moon_halo(actor_center, Color("#e1d09a"), 5)
+			spawn_particle_burst(actor_center, Color("#efe2b7"), 42, 205.0, "符")
+			await get_tree().create_timer(0.20).timeout
+		"onmyoji_barrier":
+			spawn_barrier_dome(party_center, Color("#d8ca96"), 280.0)
+			await get_tree().create_timer(0.18).timeout
+
 		_:
-			# 未定義技だけ最低限。通常技はここへ来ないよう全30技を個別定義する。
+			# 未定義技だけ最低限。
 			spawn_shader_wave(enemy_center, tone, 0.24)
 			spawn_gpu_sparks(enemy_center, tone, 30, 180.0)
 			await get_tree().create_timer(0.15).timeout
@@ -9302,6 +11197,12 @@ func play_character_attack_fx(char_name: String) -> void:
 			spawn_particle_burst(center, Color("#e1bad5"), 10, 90.0, "✦")
 		"nekomata":
 			play_pixel_vfx("Slashes/Dagger Flick", center, 3.8, 20.0, Color("#a8ddd7"))
+		"yukionna":
+			play_pixel_vfx("Magic/Water Splash", center, 3.6, 20.0, Color("#caeffb"))
+		"hakamori":
+			play_pixel_vfx("Hit Sparks/Heavy Hit", center, 3.8, 18.0, Color("#b9aa90"))
+		"onmyoji":
+			play_pixel_vfx("Magic/Cast Circle", center, 3.8, 18.0, Color("#dfce96"))
 		_:
 			spawn_particle_burst(center, Color("#b58ac9"), 9, 80.0, "・")
 
@@ -9606,6 +11507,9 @@ func get_ultimate_sigil(char_name: String) -> String:
 		"酒呑童子": return "鬼"
 		"神楽師": return "舞"
 		"猫又": return "妖"
+		"雪女": return "雪"
+		"墓守": return "墓"
+		"陰陽師": return "陰"
 		_: return "月"
 
 
@@ -9621,6 +11525,9 @@ func get_ultimate_subtitle(char_name: String) -> String:
 		"酒呑童子": return "鬼宴、月まで呑み干す"
 		"神楽師": return "八百万を一夜へ招く"
 		"猫又": return "双月に妖火が踊る"
+		"雪女": return "永い夜を白雪で閉ざす"
+		"墓守": return "千の墓標を鎮め、崩す"
+		"陰陽師": return "陰陽を巡らせ月を定める"
 		_: return "月光を極技へ変える"
 
 
@@ -10006,6 +11913,23 @@ func get_score_effect_text(phrase_name: String) -> String:
 		"静奏": return "効果：味方全体の生命4%・構え20回復"
 		"彩奏": return "効果：味方全体の奏力2・構え12回復"
 		"合奏": return "効果：味方全体の奏力1・構え8回復"
+		"双極奏": return "効果：攻撃・崩しを同時強化"
+		"対々奏": return "効果：味方全体の奏力1・構え18回復"
+		"四対奏": return "効果：奏力2・構え22回復 / 結界1巡"
+		"三三二奏": return "効果：攻撃・崩し強化 / 奏力回復"
+		"鏡奏": return "効果：結界2巡 / 生命・構え回復"
+		"反復奏": return "効果：攻撃強化3巡"
+		"双柱奏": return "効果：崩し3巡・攻撃2巡を強化"
+		"二重輪奏": return "効果：味方CTB前進 / 奏力・構え回復"
+		"三環奏": return "効果：味方CTB前進 / 奏力2回復"
+		"一色奏": return "効果：攻撃・崩し4巡を大幅強化"
+		"七音奏": return "効果：奏力3・構え24回復 / 生命回復"
+		"七巡奏": return "効果：極大強化 / 敵構え18%を直接削る"
+		"三柱合奏": return "効果：奏力2・構え16回復"
+		"渡月奏": return "効果：生命3%・構え12回復"
+		"巡月奏": return "効果：生命5%・構え20・奏力1回復"
+		"月綴奏": return "効果：奏力2・構え10回復 / 攻撃強化"
+		"八響奏": return "効果：奏力3・構え24回復 / 攻撃・崩し極大強化"
 		"朔月・静奏": return "効果：味方全体の奏力2・構え16回復"
 		"三日月・疾奏": return "効果：奏力1・構え10回復 / 攻撃強化"
 		"上弦・破奏": return "効果：崩し強化 / 敵構えを最大値の14%削る"
@@ -10057,6 +11981,40 @@ func get_score_visual_profile(
 			return {"tone":Color("#d8b2cf"), "sigil":"彩", "sub":"異なる響きが交わる", "kind":"color"}
 		"合奏":
 			return {"tone":Color("#d7c082"), "sigil":"合", "sub":"三つの音が重なる", "kind":"ensemble"}
+		"双極奏":
+			return {"tone":Color("#d2b77f"), "sigil":"双", "sub":"二つの極が拮抗する", "kind":"pairs"}
+		"対々奏":
+			return {"tone":Color("#c8bd99"), "sigil":"対", "sub":"対が対を呼ぶ", "kind":"pairs"}
+		"四対奏":
+			return {"tone":Color("#e7ca82"), "sigil":"四", "sub":"四つの対、整う", "kind":"pairs"}
+		"三三二奏":
+			return {"tone":Color("#d4aa73"), "sigil":"組", "sub":"三・三・二、噛み合う", "kind":"pairs"}
+		"鏡奏":
+			return {"tone":Color("#b8ddd5"), "sigil":"鏡", "sub":"前後、完全に映る", "kind":"mirror"}
+		"反復奏":
+			return {"tone":Color("#dcb980"), "sigil":"反", "sub":"四拍がもう一度巡る", "kind":"repeat"}
+		"双柱奏":
+			return {"tone":Color("#d4b16f"), "sigil":"柱", "sub":"二柱、八拍を支える", "kind":"pillars"}
+		"二重輪奏":
+			return {"tone":Color("#a7d0e2"), "sigil":"輪", "sub":"二音が輪を描く", "kind":"cycle"}
+		"三環奏":
+			return {"tone":Color("#b9cee8"), "sigil":"環", "sub":"三音、環となる", "kind":"cycle"}
+		"一色奏":
+			return {"tone":Color("#f3ca70"), "sigil":"壱", "sub":"八拍、一音に染まる", "kind":"monochrome"}
+		"七音奏":
+			return {"tone":Color("#dfb9e5"), "sigil":"七", "sub":"七つの響き、揃う", "kind":"spectrum"}
+		"七巡奏":
+			return {"tone":Color("#f4d68b"), "sigil":"巡", "sub":"七音、一巡して帰る", "kind":"ascension"}
+		"三柱合奏":
+			return {"tone":Color("#ddc889"), "sigil":"三", "sub":"三人の柱が揃う", "kind":"ensemble"}
+		"渡月奏":
+			return {"tone":Color("#aebfd8"), "sigil":"渡", "sub":"月を跨ぎ、響きを保つ", "kind":"moonpath"}
+		"巡月奏":
+			return {"tone":Color("#bca9dc"), "sigil":"巡", "sub":"幾つもの月を越える", "kind":"moonpath"}
+		"月綴奏":
+			return {"tone":Color("#dfcb86"), "sigil":"綴", "sub":"月の響きを綴る", "kind":"resonance"}
+		"八響奏":
+			return {"tone":Color("#ffe39a"), "sigil":"響", "sub":"八拍、すべて月と鳴る", "kind":"resonance"}
 		_:
 			return {"tone":Color("#9aa2ad"), "sigil":"余", "sub":"響きだけが残る", "kind":"afterglow"}
 
@@ -10122,6 +12080,76 @@ func spawn_score_signature_fx(
 				spawn_moon_halo(center_point + offset, tone, 2)
 			spawn_gpu_sparks(center_point, tone, 62, 330.0)
 
+		"pairs":
+			for offset_x in [-260.0, -90.0, 90.0, 260.0]:
+				spawn_ring(center_point + Vector2(offset_x, 0), Color(tone, 0.46), 86.0)
+			spawn_gpu_sparks(center_point, tone, 58, 260.0)
+
+		"mirror":
+			for i in range(5):
+				var spread := 90.0 + float(i) * 48.0
+				spawn_streak(center_point + Vector2(-spread, -250), Vector2(0, 500), Color(tone, 0.30), 3.0)
+				spawn_streak(center_point + Vector2(spread, -250), Vector2(0, 500), Color(tone, 0.30), 3.0)
+			spawn_ring(center_point, Color(tone, 0.62), 300.0)
+
+		"repeat":
+			for i in range(4):
+				spawn_ring(center_point, Color(tone, 0.50 - float(i) * 0.07), 120.0 + float(i) * 95.0)
+				spawn_shader_wave(center_point, tone, 0.18 + float(i) * 0.05)
+
+		"pillars":
+			spawn_holy_column(center_point + Vector2(-170, 0), tone, 520.0)
+			spawn_holy_column(center_point + Vector2(170, 0), tone, 520.0)
+			spawn_gpu_sparks(center_point, tone, 74, 340.0)
+
+		"cycle":
+			for i in range(8):
+				var angle := TAU * float(i) / 8.0
+				var p := center_point + Vector2(cos(angle), sin(angle)) * 230.0
+				spawn_ring(p, Color(tone, 0.40), 64.0)
+			spawn_wind_arc(center_point, tone, 10)
+
+		"monochrome":
+			spawn_moon_halo(center_point, tone, 8)
+			spawn_holy_column(center_point, tone, 620.0)
+			spawn_ink_burst(center_point, Color(tone, 0.58), 72)
+			spawn_fullscreen_flash(Color(tone, 0.70), 0.20, 0.10)
+
+		"spectrum":
+			var spectrum: Array[Color] = [
+				Color("#c9d2df"), Color("#97bfd0"), Color("#d8c16f"),
+				Color("#9fc7a9"), Color("#e0a96b"), Color("#bd84c8"), Color("#d6a1b2")
+			]
+			for i in range(spectrum.size()):
+				var angle := TAU * float(i) / float(spectrum.size())
+				spawn_moon_halo(center_point + Vector2(cos(angle), sin(angle)) * 190.0, spectrum[i], 2)
+			spawn_gpu_sparks(center_point, Color("#f3e9d4"), 96, 390.0)
+
+		"ascension":
+			for i in range(7):
+				spawn_streak(
+					center_point + Vector2(-390 + float(i) * 120.0, 260),
+					Vector2(180, -560),
+					Color(tone, 0.28 + float(i) * 0.045),
+					3.0 + float(i % 2)
+				)
+			spawn_holy_column(center_point, Color("#fff0bb"), 600.0)
+			spawn_gpu_sparks(center_point, tone, 110, 430.0)
+
+		"moonpath":
+			for i in range(6):
+				var angle := -PI * 0.85 + float(i) * (PI * 1.7 / 5.0)
+				var p := center_point + Vector2(cos(angle), sin(angle)) * 240.0
+				spawn_moon_halo(p, Color(MOON_COLORS[i % MOON_COLORS.size()], 0.78), 2)
+			spawn_shader_wave(center_point, tone, 0.52)
+
+		"resonance":
+			for i in range(8):
+				spawn_ring(center_point, Color(tone, 0.48 - float(i) * 0.045), 90.0 + float(i) * 58.0)
+			spawn_gpu_sparks(center_point, tone, 128, 460.0)
+			spawn_holy_column(center_point, Color("#fff2bf"), 650.0)
+			spawn_fullscreen_flash(Color("#fff2bf"), 0.22, 0.11)
+
 		"afterglow":
 			spawn_particle_burst(center_point, Color(tone, 0.55), 22, 150.0, "・")
 			spawn_shader_wave(center_point, tone, 0.22)
@@ -10185,6 +12213,53 @@ func spawn_score_signature_fx(
 			spawn_shader_wave(center_point, tone, 0.56)
 
 
+func trigger_score_role_reveal(
+	role_index: int,
+	role_value: int,
+	center_point: Vector2,
+	tone: Color,
+	role_name: String
+) -> void:
+	play_score_role_drum(role_index, role_value)
+	spawn_ring(center_point, Color(tone, 0.42), 215.0 + float(role_index % 3) * 34.0)
+	spawn_gpu_sparks(
+		center_point,
+		Color(tone, 0.90),
+		22 + role_value * 4,
+		190.0 + float(role_value) * 18.0
+	)
+	if role_value >= 4:
+		spawn_shader_wave(center_point, Color(tone, 0.82), 0.20)
+		shake_amount = maxf(shake_amount, 5.5 + float(role_value) * 0.55)
+	if role_value >= 6:
+		spawn_fullscreen_flash(Color(tone, 0.72), 0.10, 0.06)
+	append_log("[color=#d8c59d]成立役 + %s　◆%d[/color]" % [role_name, role_value])
+
+
+func trigger_score_total_reveal(
+	center_point: Vector2,
+	tone: Color,
+	score_value: int,
+	rank: String
+) -> void:
+	play_generated_sweep(160.0, 760.0 if score_value < 10 else 1120.0, 0.30, 0.10)
+	spawn_ring(center_point, Color(COL_GOLD_BRIGHT, 0.72), 330.0)
+	spawn_gpu_sparks(center_point, COL_GOLD_BRIGHT, 42 + score_value * 4, 280.0 + score_value * 8.0)
+	if rank == "大奏" or rank == "極奏":
+		spawn_ink_burst(center_point, Color(tone, 0.58), 42 if rank == "大奏" else 68)
+		spawn_fullscreen_flash(Color("#f6dfaa"), 0.14 if rank == "大奏" else 0.22, 0.08)
+		shake_amount = maxf(shake_amount, 10.0 if rank == "大奏" else 15.0)
+
+
+func trigger_finisher_unlock_reveal(center_point: Vector2) -> void:
+	play_unlock_impact()
+	spawn_holy_column(center_point, COL_GOLD_BRIGHT, 560.0)
+	spawn_moon_halo(center_point, COL_GOLD_BRIGHT, 7)
+	spawn_gpu_sparks(center_point, COL_GOLD_BRIGHT, 96, 430.0)
+	spawn_fullscreen_flash(Color("#ffe8aa"), 0.26, 0.10)
+	shake_amount = maxf(shake_amount, 14.0)
+
+
 func show_score_completion_banner(
 	phrase_name: String,
 	is_moon_combo: bool,
@@ -10194,8 +12269,47 @@ func show_score_completion_banner(
 	if screen_mode != "battle":
 		return
 
-	duck_battle_bgm(-25.0 if is_moon_combo else -19.0, 1.0)
-	play_generated_score_sound(is_moon_combo)
+	# 一度「奏譜そのもの」を成立させ、その後に役を一つずつ加算する。
+	# 麻雀の役表示のように、最終奏価は最後まで見せない。
+	var combo := detect_score_combo(notes)
+	var score_value := int(combo.get("score_value", 0))
+	var rank := str(combo.get("rank", "小奏"))
+	var roles: Array[Dictionary] = []
+	var roles_value_total := 0
+	for role_variant in combo.get("roles", []):
+		var role: Dictionary = role_variant
+		roles.append(role)
+		roles_value_total += int(role.get("value", 0))
+	var moon_bonus := maxi(0, score_value - roles_value_total)
+
+	var bgm_db := -18.0
+	var title_size := 72
+	match rank:
+		"中奏":
+			bgm_db = -22.0
+			title_size = 78
+		"大奏":
+			bgm_db = -30.0
+			title_size = 88
+		"極奏":
+			bgm_db = -38.0
+			title_size = 98
+	if is_moon_combo:
+		bgm_db -= 3.0
+
+	var tally_count := roles.size() + (1 if moon_bonus > 0 else 0)
+	var tally_start := 0.72
+	var tally_gap := 0.34
+	var total_delay := tally_start + float(tally_count) * tally_gap + 0.18
+	var unlock_delay := total_delay + 0.48
+	var end_delay := total_delay + 0.92
+	if not finisher_unlock_text.is_empty():
+		end_delay = unlock_delay + 1.02
+
+	duck_battle_bgm(bgm_db, end_delay + 0.42)
+	play_generated_score_sound(is_moon_combo, score_value)
+	play_score_complete_drum(score_value)
+	trigger_score_hit_stop(score_value, is_moon_combo)
 
 	var overlay := Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -10208,25 +12322,50 @@ func show_score_completion_banner(
 	var sub_text := str(profile["sub"])
 
 	var shade := ColorRect.new()
-	shade.color = Color(0.005, 0.007, 0.012, 0.90 if is_moon_combo else 0.78)
+	var shade_alpha := 0.80
+	if rank == "大奏":
+		shade_alpha = 0.91
+	elif rank == "極奏":
+		shade_alpha = 0.965
+	elif is_moon_combo:
+		shade_alpha = 0.90
+	shade.color = Color(0.003, 0.004, 0.009, shade_alpha)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(shade)
 
 	var viewport_size := get_viewport_rect().size
 	var center_point := viewport_size * 0.5
 
-	# 奏式ごとの専用演出。汎用火花だけで済ませない。
 	spawn_score_signature_fx(phrase_name, is_moon_combo, center_point)
+	if score_value >= 3:
+		spawn_ring(center_point, Color(tone, 0.45), 330.0)
+		spawn_gpu_sparks(center_point, tone, 42 + score_value * 3, 300.0 + score_value * 12.0)
+	if score_value >= 7:
+		spawn_ink_burst(center_point, Color(tone, 0.72), 72)
+		spawn_moon_halo(center_point, tone, 6)
+		spawn_fullscreen_flash(Color(tone, 0.92), 0.20, 0.09)
+		shake_amount = maxf(shake_amount, 13.0)
+	if score_value >= 10:
+		spawn_holy_column(center_point, COL_GOLD_BRIGHT, 620.0)
+		spawn_moon_halo(center_point, COL_GOLD_BRIGHT, 10)
+		spawn_gpu_sparks(center_point, COL_GOLD_BRIGHT, 118, 470.0)
+		spawn_fullscreen_flash(Color("#fff1bd"), 0.30, 0.12)
+		shake_amount = maxf(shake_amount, 19.0)
 
-	var sigil := make_label(sigil_text, 360 if is_moon_combo else 300, Color(tone, 0.10))
+	var sigil_size := 300
+	if rank == "大奏":
+		sigil_size = 390
+	elif rank == "極奏":
+		sigil_size = 470
+	var sigil := make_label(sigil_text, sigil_size, Color(tone, 0.085 if score_value < 7 else 0.13))
 	apply_display_font(sigil)
 	sigil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sigil.set_anchors_preset(Control.PRESET_CENTER)
-	sigil.position = Vector2(-450, -275)
-	sigil.size = Vector2(900, 550)
+	sigil.position = Vector2(-500, -320)
+	sigil.size = Vector2(1000, 640)
 	sigil.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sigil.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	sigil.rotation = deg_to_rad(-6.0 if is_moon_combo else 5.0)
+	sigil.rotation = deg_to_rad(-7.0 if is_moon_combo else 5.0)
 	overlay.add_child(sigil)
 
 	var center := CenterContainer.new()
@@ -10235,80 +12374,192 @@ func show_score_completion_banner(
 
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 11)
+	v.add_theme_constant_override("separation", 7)
 	center.add_child(v)
 
-	var top_text := "月　奏" if is_moon_combo else "奏　譜　成　立"
-	var top := make_label(top_text, 28 if is_moon_combo else 22, tone)
+	var top_text := "月　奏　成　立" if is_moon_combo else "奏　譜　成　立"
+	var top := make_label(top_text, 22 if score_value < 7 else 27, tone)
 	apply_display_font(top)
 	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(top)
 
 	var rule_top := ColorRect.new()
-	rule_top.color = Color(tone, 0.68)
-	rule_top.custom_minimum_size = Vector2(620 if is_moon_combo else 540, 2)
+	rule_top.color = Color(tone, 0.72)
+	rule_top.custom_minimum_size = Vector2(760 if score_value >= 7 else 600, 2 if score_value < 10 else 3)
 	v.add_child(rule_top)
 
 	var main := make_label(
 		phrase_name,
-		86 if is_moon_combo else 72,
-		COL_GOLD_BRIGHT if is_moon_combo else Color("#e0e5ec")
+		title_size + (6 if is_moon_combo else 0),
+		COL_GOLD_BRIGHT if (is_moon_combo or score_value >= 7) else Color("#e6e8ed")
 	)
 	apply_display_font(main)
 	main.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	main.add_theme_color_override("font_outline_color", Color("#040509"))
-	main.add_theme_constant_override("outline_size", 14)
+	main.add_theme_color_override("font_outline_color", Color("#030408"))
+	main.add_theme_constant_override("outline_size", 16 if score_value >= 7 else 12)
 	v.add_child(main)
 
-	var sub := make_label(sub_text, 15, Color(tone, 0.88))
+	var sub := make_label(sub_text, 15, Color(tone, 0.92))
 	apply_display_font(sub)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
 
-	var effect_text := make_label(get_score_effect_text(phrase_name), 14, Color("#e6dfcf"))
+	var effect_text := make_label(get_score_effect_text(phrase_name), 13, Color("#d7d2c8"))
 	apply_body_font(effect_text)
 	effect_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect_text.add_theme_color_override("font_outline_color", Color("#050609"))
 	effect_text.add_theme_constant_override("outline_size", 5)
 	v.add_child(effect_text)
 
+	var tally_head := make_label("──　成 立 役　──", 12, Color("#8f897d"))
+	apply_display_font(tally_head)
+	tally_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(tally_head)
+
+	var tally_box := VBoxContainer.new()
+	tally_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	tally_box.add_theme_constant_override("separation", 4)
+	v.add_child(tally_box)
+
+	var role_rows: Array[Control] = []
+	var reveal_index := 0
+	for role in roles:
+		var role_name := str(role.get("name", ""))
+		var role_value := int(role.get("value", 0))
+		var prefix := "＋"
+		if not is_moon_combo and role_name == phrase_name:
+			prefix = "主奏"
+
+		var row := make_panel(Color("#0d0f15e8"), Color(tone, 0.42), 8, 1)
+		row.custom_minimum_size = Vector2(520, 34)
+		row.modulate.a = 0.0
+		row.scale = Vector2(1.16, 0.82)
+		row.pivot_offset = Vector2(260, 17)
+		tally_box.add_child(row)
+
+		var row_label := make_label(
+			"%s　%s　　　　　　　　　◆ %d" % [prefix, role_name, role_value],
+			14 if role_value < 5 else 16,
+			COL_GOLD_BRIGHT if role_value >= 5 else Color("#e4d8c1")
+		)
+		apply_display_font(row_label)
+		row_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		row_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(row_label)
+		role_rows.append(row)
+
+		var row_delay := tally_start + float(reveal_index) * tally_gap
+		var role_tween := create_tween()
+		role_tween.tween_interval(row_delay)
+		role_tween.tween_callback(
+			trigger_score_role_reveal.bind(
+				reveal_index,
+				role_value,
+				center_point,
+				tone,
+				role_name
+			)
+		)
+		role_tween.tween_property(row, "modulate:a", 1.0, 0.075)
+		role_tween.parallel().tween_property(row, "scale", Vector2.ONE, 0.14)
+		reveal_index += 1
+
+	if moon_bonus > 0:
+		var moon_row := make_panel(Color("#11121be8"), Color(COL_GOLD_BRIGHT, 0.58), 8, 1)
+		moon_row.custom_minimum_size = Vector2(520, 34)
+		moon_row.modulate.a = 0.0
+		moon_row.scale = Vector2(1.16, 0.82)
+		moon_row.pivot_offset = Vector2(260, 17)
+		tally_box.add_child(moon_row)
+		var moon_row_label := make_label(
+			"＋　月共鳴　　　　　　　　　◆ %d" % moon_bonus,
+			15,
+			COL_GOLD_BRIGHT
+		)
+		apply_display_font(moon_row_label)
+		moon_row_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		moon_row_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		moon_row.add_child(moon_row_label)
+
+		var moon_delay := tally_start + float(reveal_index) * tally_gap
+		var moon_tween := create_tween()
+		moon_tween.tween_interval(moon_delay)
+		moon_tween.tween_callback(
+			trigger_score_role_reveal.bind(
+				reveal_index,
+				moon_bonus,
+				center_point,
+				COL_GOLD_BRIGHT,
+				"月共鳴"
+			)
+		)
+		moon_tween.tween_property(moon_row, "modulate:a", 1.0, 0.075)
+		moon_tween.parallel().tween_property(moon_row, "scale", Vector2.ONE, 0.14)
+
+	var total_label := make_label(
+		"【 %s 】　　合計奏価　◆ %d" % [rank, score_value],
+		24 if score_value < 7 else 31,
+		COL_GOLD_BRIGHT
+	)
+	apply_display_font(total_label)
+	total_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	total_label.add_theme_color_override("font_outline_color", Color("#050609"))
+	total_label.add_theme_constant_override("outline_size", 9)
+	total_label.modulate.a = 0.0
+	total_label.scale = Vector2(1.28, 0.76)
+	total_label.pivot_offset = Vector2(300, 18)
+	v.add_child(total_label)
+
+	var total_tween := create_tween()
+	total_tween.tween_interval(total_delay)
+	total_tween.tween_callback(
+		trigger_score_total_reveal.bind(center_point, tone, score_value, rank)
+	)
+	total_tween.tween_property(total_label, "modulate:a", 1.0, 0.08)
+	total_tween.parallel().tween_property(total_label, "scale", Vector2.ONE, 0.18)
+
 	if not finisher_unlock_text.is_empty():
-		var unlock_label := make_label(finisher_unlock_text, 18, COL_GOLD_BRIGHT)
+		var unlock_panel := make_panel(Color("#171108ef"), Color("#d8b85c"), 10, 2)
+		unlock_panel.custom_minimum_size = Vector2(660, 54)
+		unlock_panel.modulate.a = 0.0
+		unlock_panel.scale = Vector2(1.30, 0.72)
+		unlock_panel.pivot_offset = Vector2(330, 27)
+		v.add_child(unlock_panel)
+		var unlock_label := make_label(finisher_unlock_text, 22 if score_value < 7 else 26, COL_GOLD_BRIGHT)
 		apply_display_font(unlock_label)
 		unlock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		unlock_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		unlock_label.add_theme_color_override("font_outline_color", Color("#050609"))
-		unlock_label.add_theme_constant_override("outline_size", 7)
-		v.add_child(unlock_label)
-		spawn_gpu_sparks(get_viewport_rect().size * 0.5, COL_GOLD_BRIGHT, 74, 360.0)
-		spawn_fullscreen_flash(Color("#ffe6a3"), 0.16, 0.10)
+		unlock_label.add_theme_constant_override("outline_size", 8)
+		unlock_panel.add_child(unlock_label)
+
+		var unlock_tween := create_tween()
+		unlock_tween.tween_interval(unlock_delay)
+		unlock_tween.tween_callback(trigger_finisher_unlock_reveal.bind(center_point))
+		unlock_tween.tween_property(unlock_panel, "modulate:a", 1.0, 0.07)
+		unlock_tween.parallel().tween_property(unlock_panel, "scale", Vector2.ONE, 0.18)
 
 	var note_row := HBoxContainer.new()
 	note_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	note_row.add_theme_constant_override("separation", 10)
+	note_row.add_theme_constant_override("separation", 8)
 	v.add_child(note_row)
 
 	for note_variant in notes:
 		var note: Dictionary = note_variant
 		var mark := str(note.get("mark", ""))
-		var crest := make_panel(Color("#0d0f14cc"), Color(get_note_color(mark), 0.58), 8, 1)
-		crest.custom_minimum_size = Vector2(68, 46)
+		var crest := make_panel(Color("#0d0f14dd"), Color(get_note_color(mark), 0.68), 8, 1)
+		crest.custom_minimum_size = Vector2(66, 42)
 		note_row.add_child(crest)
-
-		var crest_label := make_label(get_note_display(mark), 18, get_note_color(mark))
+		var crest_label := make_label(get_note_display(mark), 17, get_note_color(mark))
 		apply_display_font(crest_label)
 		crest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		crest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		crest.add_child(crest_label)
 
-	var rule_bottom := ColorRect.new()
-	rule_bottom.color = Color(tone, 0.36)
-	rule_bottom.custom_minimum_size = Vector2(440, 1)
-	v.add_child(rule_bottom)
-
 	var phase_text := make_label(
-		PHASES[moon_index] + ("　共鳴" if is_moon_combo else "　奏譜"),
-		13,
-		Color("#aaa8a2")
+		PHASES[moon_index] + ("　月共鳴" if is_moon_combo else "　完成"),
+		12,
+		Color("#a7a39b")
 	)
 	phase_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(phase_text)
@@ -10317,12 +12568,14 @@ func show_score_completion_banner(
 	v.pivot_offset = v.size * 0.5
 	sigil.pivot_offset = sigil.size * 0.5
 
-	var hold_time := 1.48 if is_moon_combo else 1.10
+	var enter_scale := Vector2(1.34, 0.66) if score_value >= 7 else Vector2(1.24, 0.76)
 	var tween := create_tween()
-	tween.tween_property(overlay, "modulate:a", 1.0, 0.07)
-	tween.parallel().tween_property(v, "scale", Vector2.ONE, 0.20).from(Vector2(1.28, 0.72))
-	tween.parallel().tween_property(sigil, "scale", Vector2.ONE, 0.36).from(Vector2(0.72, 0.72))
-	tween.tween_interval(hold_time)
+	tween.tween_property(overlay, "modulate:a", 1.0, 0.055)
+	tween.parallel().tween_property(v, "scale", Vector2.ONE, 0.22).from(enter_scale)
+	tween.parallel().tween_property(sigil, "scale", Vector2.ONE, 0.38).from(Vector2(0.60, 0.60))
+	if score_value >= 7:
+		tween.parallel().tween_property(v, "rotation", 0.0, 0.18).from(deg_to_rad(-1.6))
+	tween.tween_interval(end_delay)
 	tween.tween_property(overlay, "modulate:a", 0.0, 0.22)
 	tween.tween_callback(overlay.queue_free)
 
@@ -10359,9 +12612,11 @@ func apply_moon_arrival_effect(phase_index: int) -> void:
 func apply_enemy_moon_damage(damage: int) -> int:
 	var result := float(damage)
 	if moon_index == 4:
-		result *= 1.25
+		result *= 1.30
 	elif moon_index == 0:
 		result *= 0.92
+	elif moon_index == 1 or moon_index == 3:
+		result *= 1.08
 	return maxi(1, int(round(result)))
 
 
@@ -10418,6 +12673,10 @@ func refresh_moon_forecast() -> void:
 
 	var bonus := get_planned_moon_bonus(preview_actor, preview_action)
 	var next_phase := (moon_index + 1 + bonus) % PHASES.size()
+
+	if str(enemy_state.get("id", "")) == "eclipse_lady" and is_enemy_second_phase():
+		moon_forecast_label.text = "月路　今巡【%s】固定　→　次巡【？？？】　月蝕に覆われている" % PHASES[moon_index]
+		return
 
 	moon_forecast_label.text = "月路　今巡【%s】固定　→　次巡【%s】%s" % [
 		PHASES[moon_index],
